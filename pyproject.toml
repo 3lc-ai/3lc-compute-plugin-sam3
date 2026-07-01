@@ -1,4 +1,4 @@
-# 3lc-plugin-sam3 — the SAM3 auto-label plugin for the 3LC compute service, as a standalone
+# 3lc-compute-plugin-sam3 — the SAM3 auto-label plugin for the 3LC compute service, as a standalone
 # single-plugin distribution with its own heavy GPU stack version cadence.
 #
 # Isolation contract: this distribution is NEVER installed into the host venv. The host discovers
@@ -11,8 +11,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "3lc-plugin-sam3"
-version = "1.0.0"
+name = "3lc-compute-plugin-sam3"
+version = "0.1.0"
 description = "SAM3 auto-label plugin for the 3LC compute service (venv-isolated)."
 requires-python = ">=3.10"
 # Apache-2.0: SAM lineage is Apache-2.0 and the other deps (torch/torchvision/umap-learn) are
@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra sam3, or
-# 3lc-plugin-sam3[sam3]==<ver> from an index).
+# 3lc-compute-plugin-sam3[sam3]==<ver> from an index).
 [project.optional-dependencies]
 sam3 = [
     # Floor above the empty PyPI placeholder (0.0.1): that release ships no code, so a bare "sam3"

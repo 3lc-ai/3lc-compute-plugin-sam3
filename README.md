@@ -1,4 +1,4 @@
-# 3lc-plugin-sam3
+# 3lc-compute-plugin-sam3
 
 The **SAM3 auto-label** plugin for the [3LC compute service](https://github.com/3lc-ai) —
 auto-label images with SAM3: preview results, create tables, and run predictions with text prompts.
@@ -12,10 +12,10 @@ The host never installs this distribution into its own venv. It is delivered thr
 three plugin Sources, all converging on the same out-of-process worker in a managed venv:
 
 - **Folder Source (dev):** point the service at this repo's `src/`
-  (`--plugin-dir ../3lc-plugin-sam3/src` or `TLC_COMPUTE_EXTERNAL_PLUGIN_DIRS`). Provisioning runs
+  (`--plugin-dir ../3lc-compute-plugin-sam3/src` or `TLC_COMPUTE_EXTERNAL_PLUGIN_DIRS`). Provisioning runs
   `uv sync --extra sam3` against this repo.
-- **Index:** `3lc-plugin-sam3[sam3]==<ver>`.
-- **GitHub:** `github:3lc-ai/3lc-plugin-sam3@v<ver>`.
+- **Index:** `3lc-compute-plugin-sam3[sam3]==<ver>`.
+- **GitHub:** `github:3lc-ai/3lc-compute-plugin-sam3@v<ver>`.
 
 The heavy stack (`torch`, `sam3`, `umap-learn`) lives behind the **`[sam3]` extra** named by
 `runtime.provision_extra` in `src/tlc_plugin_sam3/plugin.toml` and is installed **only** into the
