@@ -113,8 +113,9 @@
           </div>
           <div class="form-group" id="sam3-folder-group">
             <label class="form-label">Folder Path</label>
-            <input type="text" id="sam3-folder" class="form-control" placeholder="/path/to/images"
-              value="/home/ubuntu/datasets/tiny_coco/val2017">
+            <!-- SDK data-source widget (rendered at init): text input keeps id sam3-folder,
+                 plus a Browse… panel backed by the SDK's /browse route. -->
+            <div id="sam3-folder-ds"></div>
           </div>
           <div class="form-group" id="sam3-table-group" style="display:none">
             <label class="form-label">Table URL</label>
@@ -464,7 +465,7 @@ function sam3NewConfig() {
   document.getElementById("sam3-config-select").value = "";
   document.getElementById("sam3-config-name").value = "";
   document.getElementById("sam3-source-type").value = "folder"; sam3SourceChanged();
-  document.getElementById("sam3-folder").value = "/home/ubuntu/datasets/tiny_coco/val2017";
+  document.getElementById("sam3-folder").value = "";
   document.getElementById("sam3-table-url").value = "";
   _sam3Labels = []; _sam3ColorIndex = 0; sam3RenderLabels();
   document.getElementById("sam3-modality").value = "segmentation";
@@ -813,6 +814,17 @@ try {
 // ── Init ─────────────────────────────────────────────────────
 sam3RenderLabels();
 (function() {
+  // ── Data source init ─────────────────────────────────────
+  // SDK shared picker for the image folder: the rendered text input keeps the id
+  // "sam3-folder", so config save/restore and the alias auto-update keep working.
+  (function initFolderPicker() {
+    var ds = document.getElementById("sam3-folder-ds");
+    if (ds) {
+      ds.innerHTML = _tlcDataSourceHtml("sam3-folder", { placeholder: "/path/to/images", mode: "folder" });
+      _tlcBindDataSource("sam3-folder", _sam3ComputeUrl, "sam3", { mode: "folder" });
+    }
+  })();
+
   // ── Alias UI init ────────────────────────────────────────
   (function initAliasUI() {
     var area = document.getElementById("sam3-alias-area");

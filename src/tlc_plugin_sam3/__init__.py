@@ -43,15 +43,12 @@ class SAM3Plugin(ComputePlugin):
         """Return the SAM3 UI HTML+JS+CSS fragment."""
         if self._ui_cache is None:
             from tlc_plugin_sdk.shared.alias_ui import alias_ui_script
+            from tlc_plugin_sdk.shared.data_source_ui import data_source_ui_script
+            from tlc_plugin_sdk.shared.ui_inject import inject_scripts
 
             ui_path = Path(__file__).resolve().parent / "ui.html"
             raw = ui_path.read_text(encoding="utf-8")
-            # Inject shared alias UI JS before the first <script> content
-            self._ui_cache = raw.replace(
-                "<script>",
-                "<script>\n" + alias_ui_script(),
-                1,  # only the first <script> tag
-            )
+            self._ui_cache = inject_scripts(raw, data_source_ui_script(), alias_ui_script())
         return self._ui_cache
 
     def compute(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -109,8 +106,14 @@ class SAM3Plugin(ComputePlugin):
             raise
 
     def get_route_handlers(self) -> list[Any]:
-        """Serve SAM3's custom routes as relative Litestar handlers (host + venv)."""
-        return _routes.get_route_handlers()
+        """Serve SAM3's custom routes as relative Litestar handlers (host + venv).
+
+        The SDK's shared data-source routes (``/browse``) back the image-folder picker
+        in the fragment.
+        """
+        from tlc_plugin_sdk.shared.data_source_routes import data_source_route_handlers
+
+        return [*_routes.get_route_handlers(), *data_source_route_handlers()]
 
 
 def _log(ctx: JobContext, msg: str) -> None:
@@ -421,7 +424,11 @@ def _run_create_table(ctx: JobContext) -> str:
         if alias_originals:
             _log(ctx, f"Applied {len(alias_originals)} alias override(s)")
 
-    folder = str(params.get("folder", "") or "")
+    # normalize_url expands a user-typed ``~`` (protocol URLs pass through untouched) —
+    # saved configs may carry a tilde path from before the folder picker existed.
+    from tlc_plugin_sdk.shared.url_utils import normalize_url
+
+    folder = normalize_url(str(params.get("folder", "") or ""))
     source_table_url = str(params.get("source_table_url", "") or "")
     labels = params["labels"]
     modality = params["modality"]
