@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from litestar import Response, get, post
 from litestar.params import FromPath
+from tlc_plugin_sdk.shared.url_utils import normalize_url
 
 if TYPE_CHECKING:
     from litestar.handlers import BaseRouteHandler
@@ -75,7 +76,8 @@ def get_route_handlers() -> list[BaseRouteHandler]:
     def list_images(data: dict[str, Any]) -> dict[str, Any]:
         from tlc_plugin_sam3.inference import list_images_in_folder
 
-        folder = str(data.get("folder", "")).strip()
+        # normalize_url expands a user-typed ``~`` (protocol URLs pass through untouched).
+        folder = normalize_url(str(data.get("folder", "")).strip())
         if not folder:
             return {"error": "folder is required"}
         images = list_images_in_folder(folder)
@@ -175,7 +177,7 @@ def _run_preview(data: dict[str, Any]) -> dict[str, Any]:
         render_preview,
     )
 
-    folder = data.get("folder", "").strip()
+    folder = normalize_url(data.get("folder", "").strip())
     table_url = data.get("table_url", "").strip()
     labels = data.get("labels", [])
     label_colors = data.get("label_colors", [])
@@ -194,7 +196,6 @@ def _run_preview(data: dict[str, Any]) -> dict[str, Any]:
             # Pick a random image from the table. The path is absolutized so
             # the response's image_path round-trips into later previews.
             import tlc
-            from tlc_plugin_sdk.shared.url_utils import normalize_url
 
             table = tlc.Table.from_url(normalize_url(table_url))
             if len(table) == 0:
