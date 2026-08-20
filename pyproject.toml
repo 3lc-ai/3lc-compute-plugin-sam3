@@ -13,7 +13,7 @@ build-backend = "hatchling.build"
 [project]
 name = "3lc-compute-plugin-sam3"
 version = "0.2.0"
-description = "SAM3 auto-label plugin for the 3LC compute service (venv-isolated)."
+description = "SAM3 auto-label plugin for the 3LC compute service."
 readme = "README-wheel.md"
 requires-python = ">=3.10"
 # Apache-2.0: SAM lineage is Apache-2.0 and the other deps (torch/torchvision/umap-learn) are
