@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from tlc_plugin_sdk import ComputePlugin
+from tlc_plugin_sdk import ComputePlugin, JobFailed
 
 from tlc_plugin_sam3 import routes as _routes
 
@@ -59,11 +59,15 @@ class SAM3Plugin(ComputePlugin):
         """Run a SAM3 job (predict / create_table / create_and_predict).
 
         Driven entirely by ``ctx``: ``ctx.progress`` / ``ctx.metric`` / ``ctx.log``
-        feed the generic Queue & Progress panel, while ``ctx.emit`` re-broadcasts the
-        plugin's own ``/sam3`` events (``sam3_log`` / ``sam3_progress``) for the
-        embedded UI. Cancellation is cooperative via ``ctx.cancelled``. The whole job
-        is GPU-serialized by the host; for ``create_and_predict`` the (CPU) create
-        step runs in the same GPU slot, immediately before the predict step.
+        feed the generic Queue & Progress panel, ``ctx.result`` records the artifact
+        the Queue's Open button opens (the created table, then the prediction run
+        once it exists), while ``ctx.emit`` re-broadcasts the plugin's own ``/sam3``
+        events (``sam3_log`` / ``sam3_progress``) for the embedded UI. Failures
+        propagate as exceptions (``ctx.fail`` for user-facing validation messages);
+        the host turns them into the generic failed record. Cancellation is
+        cooperative via ``ctx.cancelled``. The whole job is GPU-serialized by the
+        host; for ``create_and_predict`` the (CPU) create step runs in the same GPU
+        slot, immediately before the predict step.
 
         Args:
             ctx: Host-provided job context. ``ctx.params`` carries ``mode`` plus the
@@ -78,18 +82,22 @@ class SAM3Plugin(ComputePlugin):
             if mode == "predict":
                 _run_predict(ctx)
             elif mode == "create_table":
-                _run_create_table(ctx)
+                table_url = _run_create_table(ctx)
+                if table_url:
+                    ctx.result(table_url)
             elif mode == "create_and_predict":
                 table_url = _run_create_table(ctx)
                 if ctx.cancelled:
                     return
                 if table_url:
+                    # The table is a real artifact even if predict is later cancelled or
+                    # fails; the run URL replaces it as the result once the run exists.
+                    ctx.result(table_url)
                     # Chain predict on the freshly created table, in the same job.
                     ctx.log(f"Table created at {table_url} — running predict")
                     _run_predict(ctx, table_url=table_url)
             else:
-                msg = f"Unknown mode: {mode}"
-                raise ValueError(msg)
+                ctx.fail(f"Unknown mode: {mode}")
 
             # Update last_run timestamp on the config (best-effort).
             if config_id and not ctx.cancelled:
@@ -100,6 +108,11 @@ class SAM3Plugin(ComputePlugin):
                 except Exception:
                     logger.debug("Could not update last_run for config %s", config_id, exc_info=True)
 
+        except JobFailed as exc:
+            # A user-facing validation failure: the message is the whole story.
+            logger.warning("sam3 job failed: %s", exc)
+            ctx.emit("sam3_log", {"message": f"Error: {exc}"})
+            raise
         except Exception as exc:
             logger.exception("sam3 run_job failed")
             ctx.emit("sam3_log", {"message": f"Error: {exc}"})
@@ -169,8 +182,7 @@ def _run_predict(ctx: JobContext, table_url: str = "") -> None:
     modality = _read_modality_from_table(table)
     _log(ctx, f"Read from table schema — labels: {labels}, modality: {modality}")
     if not labels:
-        msg = "Could not read labels from table schema"
-        raise ValueError(msg)
+        ctx.fail(f"Could not read labels from the schema of {table_url}")
 
     _log(ctx, f"Labels: {labels}, modality: {modality}, confidence: {confidence}")
     _log(ctx, f"Run name: {run_name}")
@@ -394,7 +406,7 @@ def _run_predict(ctx: JobContext, table_url: str = "") -> None:
     )
     run.set_status_completed()
     ctx.metric("images", total)
-    ctx.metric("run", str(run.url))
+    ctx.result(str(run.url))
     _log(ctx, f"Done! Run URL: {run.url}")
 
 
@@ -452,14 +464,12 @@ def _run_create_table(ctx: JobContext) -> str:
             # different location.
             image_paths = get_image_paths(source_table, image_column)
             if not image_paths:
-                msg = f"No images found in table {source_table_url}"
-                raise ValueError(msg)
+                ctx.fail(f"No images found in table {source_table_url}")
         else:
             _log(ctx, f"Scanning images in: {folder}")
             image_paths = list_images_in_folder(folder)
             if not image_paths:
-                msg = f"No images found in {folder}"
-                raise ValueError(msg)
+                ctx.fail(f"No images found in {folder}")
 
         # Limit to max_images if specified
         max_images = int(params.get("max_images", 0) or 0)

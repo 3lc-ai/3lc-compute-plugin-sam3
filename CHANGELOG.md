@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- Requires plugin SDK 0.3: the dependency pin is `3lc-compute-plugin-sdk[shared]>=0.3.0,<0.4.0`.
+- The prediction run URL is reported as the job's **result** (`ctx.result`), so the Queue &
+  Progress card's Open link points at it; it is no longer a `run` entry in the job's metric
+  cards. A `create_table` job reports the created table as its result, and a
+  `create_and_predict` job reports the table until the run exists.
+- Validation failures (unknown mode, no images in the source, no labels in the table schema)
+  are reported with a clean, user-facing message on the failed job card instead of an
+  exception-type prefix.
+- The job page is now a launcher over the generic Queue: the fragment drives jobs through the
+  SDK's `PluginJobs` client and reads completion (`run_url`) and failure (`error`) from the
+  generic job record. On mount it re-attaches to a queued/running SAM3 job from the host's job
+  list, showing a compact running state (progress, "Open Queue") instead of the empty launch
+  form, so navigating away and back mid-job no longer loses the job.
+
+### Fixed
+- Live log lines and per-image progress from a running job reach the plugin page again. The
+  fragment had opened its own socket on the root namespace while the host relays the plugin's
+  events on `/sam3`; it now subscribes on the plugin namespace through `PluginJobs`.
 
 ## [0.2.1] - 2026-08-21
 
