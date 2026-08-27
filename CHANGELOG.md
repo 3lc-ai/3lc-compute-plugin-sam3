@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Requires plugin SDK 0.3: the dependency pin is `3lc-compute-plugin-sdk[shared]>=0.3.0,<0.4.0`.
+- Requires plugin SDK `3lc-compute-plugin-sdk>=0.3.1,<0.4.0`, pinned without the `[shared]`
+  extra: since SDK 0.3.1 the `3lc` data plane is a base dependency of the SDK, and the extra is a
+  deprecated no-op.
 - The prediction run URL is reported as the job's **result** (`ctx.result`), so the Queue &
   Progress card's Open link points at it; it is no longer a `run` entry in the job's metric
   cards. A `create_table` job reports the created table as its result, and a

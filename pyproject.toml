@@ -22,9 +22,9 @@ requires-python = ">=3.10"
 # runtime (separate from this code). Full text in ./LICENSE.
 license = "Apache-2.0"
 # Base = the SDK floor ONLY. The heavy stack rides the [sam3] extra below and is installed only
-# into the plugin's provisioned venv. [shared] = the SDK's optional `tlc` data plane.
+# into the plugin's provisioned venv. The SDK brings the `tlc` data plane (`3lc[pandas]`).
 dependencies = [
-    "3lc-compute-plugin-sdk[shared]>=0.3.0,<0.4.0",
+    "3lc-compute-plugin-sdk>=0.3.1,<0.4.0",
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra sam3, or
@@ -39,7 +39,7 @@ sam3 = [
     # Dimensionality reduction: the plugin materializes pacmap/umap-reduced tables in its OWN
     # provisioned venv, so it needs tlc's PacmapTable/UmapTable (pacmap / umap-learn / joblib /
     # scikit-learn / annoy). Go through the `3lc[pacmap,umap]` extras rather than raw pins so the
-    # full dep set and version bounds track the monorepo. `[shared]` brings `3lc[pandas]`; unioned
+    # full dep set and version bounds track the monorepo. The SDK brings `3lc[pandas]`; unioned
     # here that yields `3lc[pandas,pacmap,umap]` in the venv. Mirrors the host's spec in 3lc-compute.
     # (Previously only had umap-learn — a run requesting pacmap reduction would fail.)
     "3lc[pacmap,umap]>=3.0.0,<4.0.0",
