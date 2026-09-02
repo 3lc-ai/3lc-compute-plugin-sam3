@@ -42,7 +42,8 @@ sam3 = [
     "psutil",
     "opencv-python-headless",
     "scipy",
-    "decord",
+    # decord ships no macOS wheels — video paths are node-side (Linux) anyway.
+    "decord; sys_platform == 'linux'",
     "matplotlib",
     "torch",
     "torchvision",
