@@ -41,10 +41,21 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         if not token:
             return {"error": "token is required"}
         os.environ["HF_TOKEN"] = token
+        # Persist: env alone dies with the worker process (and never reaches a
+        # remote GPU worker); the config dir survives restarts and is seeded to nodes.
+        from tlc_plugin_sam3.config_store import persist_hf_token
+
+        try:
+            persist_hf_token(token)
+        except Exception as exc:
+            return {"ok": True, "warning": f"token active but not persisted: {exc}"}
         return {"ok": True}
 
-    @get("/hf-token-status", sync_to_thread=False)
+    @get("/hf-token-status", sync_to_thread=True)
     def hf_token_status() -> dict[str, Any]:
+        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+
+        ensure_hf_token_env()
         return {"has_token": bool(os.environ.get("HF_TOKEN", ""))}
 
     # ── Preview (CPU-bound SAM3 inference — sync_to_thread keeps the event loop free) ──
@@ -53,6 +64,9 @@ def get_route_handlers() -> list[BaseRouteHandler]:
     def preview(data: dict[str, Any]) -> Response[dict[str, Any]]:
         import traceback
 
+        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+
+        ensure_hf_token_env()  # model download needs HF_TOKEN; env dies with the process
         try:
             result = _run_preview(data)
         except Exception as exc:
