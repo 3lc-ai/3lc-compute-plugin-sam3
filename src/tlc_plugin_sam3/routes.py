@@ -58,6 +58,25 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         ensure_hf_token_env()
         return {"has_token": bool(os.environ.get("HF_TOKEN", ""))}
 
+    @post("/model-warmup", status_code=200, sync_to_thread=True)
+    def model_warmup(data: dict[str, Any]) -> dict[str, Any]:
+        """Kick off the (multi-GB, once-per-machine) model load; returns immediately.
+
+        The fragment polls ``/model-status`` afterwards — short requests that no
+        browser timeout or proxy idle window can kill, unlike one long preview call.
+        """
+        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+        from tlc_plugin_sam3.inference import warmup_model
+
+        ensure_hf_token_env()
+        return warmup_model(str(data.get("device", "cuda") or "cuda"))
+
+    @get("/model-status", sync_to_thread=True)
+    def model_status_route() -> dict[str, Any]:
+        from tlc_plugin_sam3.inference import model_status
+
+        return model_status()
+
     # ── Preview (CPU-bound SAM3 inference — sync_to_thread keeps the event loop free) ──
 
     @post("/preview", status_code=200, sync_to_thread=True)
@@ -168,6 +187,8 @@ def get_route_handlers() -> list[BaseRouteHandler]:
     return [
         set_hf_token,
         hf_token_status,
+        model_warmup,
+        model_status_route,
         preview,
         list_images,
         read_labels,
