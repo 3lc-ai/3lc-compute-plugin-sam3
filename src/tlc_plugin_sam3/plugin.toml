@@ -25,3 +25,7 @@ entrypoint = "tlc_plugin_sam3:SAM3Plugin"
 # installs it ONLY into this plugin's provisioned venv, never the host venv.
 provision_extra = "sam3"
 requires_gpu = true
+# Routes that must run on the armed GPU node: the model lives in that worker. Configs and
+# the HF token store stay on the controller (the host seeds the token onto a node at
+# worker-ensure); read-labels / list-images read data the controller can always reach.
+node_routes = ["/preview", "/model-warmup", "/model-status"]
