@@ -74,6 +74,9 @@ class SAM3Plugin(ComputePlugin):
                 mode-specific request fields.
 
         """
+        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+
+        ensure_hf_token_env()  # model download needs HF_TOKEN; the persisted copy survives restarts
         params = ctx.params
         mode = str(params.get("mode", "predict") or "predict")
         config_id = (str(params.get("config_id", "") or "").strip()) or None
