@@ -34,6 +34,16 @@ sam3 = [
     # Floor above the empty PyPI placeholder (0.0.1): that release ships no code, so a bare "sam3"
     # lets the resolver pin it and the worker fails at import. 0.1.x is the real Meta SAM3.
     "sam3>=0.1.4",
+    # The sam3 wheel imports these without declaring them (verified against 0.1.4's
+    # requires_dist vs its sources): psutil (model/sam3_video_predictor), cv2 +
+    # matplotlib (visualization_utils), scipy (model/eval), decord (model/utils).
+    # Declared here so a freshly provisioned venv doesn't ModuleNotFoundError at
+    # request time — found live as `No module named 'psutil'` on a GPU node.
+    "psutil",
+    "opencv-python-headless",
+    "scipy",
+    "decord",
+    "matplotlib",
     "torch",
     "torchvision",
     # Dimensionality reduction: the plugin materializes pacmap/umap-reduced tables in its OWN
