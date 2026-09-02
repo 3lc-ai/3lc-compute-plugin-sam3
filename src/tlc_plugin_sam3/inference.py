@@ -22,6 +22,46 @@ logger = logging.getLogger(__name__)
 
 # Singleton model cache
 _model = None
+
+# Warmup bookkeeping: the first _ensure_model downloads multi-GB weights, which
+# outlives browser fetch timeouts AND (on nodes) the TLS proxy's idle window.
+# /model-warmup starts the load on a background thread and returns immediately;
+# /model-status is polled (each poll a fresh, proxy-safe request) until "ready".
+_warmup_state: dict[str, str] = {"state": "cold", "detail": ""}
+_warmup_lock: Any = None
+
+
+def warmup_model(device: str = "cuda") -> dict[str, str]:
+    """Start loading the model in the background (idempotent); returns current state."""
+    import threading
+
+    global _warmup_lock
+    if _warmup_lock is None:
+        _warmup_lock = threading.Lock()
+    with _warmup_lock:
+        if _model is not None:
+            _warmup_state.update(state="ready", detail="")
+            return dict(_warmup_state)
+        if _warmup_state["state"] == "warming":
+            return dict(_warmup_state)
+        _warmup_state.update(state="warming", detail="downloading/loading SAM3 weights")
+
+    def _load() -> None:
+        try:
+            _ensure_model(device)
+            _warmup_state.update(state="ready", detail="")
+        except Exception as exc:
+            _warmup_state.update(state="failed", detail=str(exc)[:300])
+
+    threading.Thread(target=_load, name="sam3-warmup", daemon=True).start()
+    return dict(_warmup_state)
+
+
+def model_status() -> dict[str, str]:
+    """The warmup state: cold | warming | ready | failed (+detail)."""
+    if _model is not None:
+        return {"state": "ready", "detail": ""}
+    return dict(_warmup_state)
 _processor = None
 _device: str = "cpu"
 

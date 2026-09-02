@@ -657,20 +657,44 @@ function sam3RunPreview(sameImage) {
   var btn = document.getElementById("sam3-preview-btn"), sameBtn = document.getElementById("sam3-preview-same-btn");
   btn.disabled = true; sameBtn.disabled = true; btn.textContent = "Loading SAM3...";
   sam3AutoSave();
-  sam3Log("Running preview...");
-  _sam3Post("/api/plugins/sam3/preview", body, { timeout: 60000 }).then(function(data) {
+
+  function restoreButtons() {
     btn.disabled = false; sameBtn.disabled = false; btn.textContent = "Preview Random Image";
-    if (data.error) { sam3Log("Error: " + data.error); return; }
-    _sam3LastPreviewPath = data.image_path; sameBtn.style.display = "";
-    sam3ViewerSetImage("data:image/png;base64," + data.preview);
-    document.getElementById("sam3-preview-detection-count").textContent = data.num_detections + " detection" + (data.num_detections !== 1 ? "s" : "");
-    document.getElementById("sam3-viewer-footer").style.display = "";
-    document.getElementById("sam3-preview-filename").textContent = data.image_path.split("/").pop();
-    sam3Log("Preview: " + data.num_detections + " detections in " + data.image_path.split("/").pop());
-  }).catch(function(e) {
-    btn.disabled = false; sameBtn.disabled = false; btn.textContent = "Preview Random Image";
-    sam3Log("Error: " + (e && e.message ? e.message : e));
-  });
+  }
+
+  function runPreview() {
+    sam3Log("Running preview...");
+    btn.textContent = "Previewing...";
+    _sam3Post("/api/plugins/sam3/preview", body, { timeout: 120000 }).then(function(data) {
+      restoreButtons();
+      if (data.error) { sam3Log("Error: " + data.error); return; }
+      _sam3LastPreviewPath = data.image_path; sameBtn.style.display = "";
+      sam3ViewerSetImage("data:image/png;base64," + data.preview);
+      document.getElementById("sam3-preview-detection-count").textContent = data.num_detections + " detection" + (data.num_detections !== 1 ? "s" : "");
+      document.getElementById("sam3-viewer-footer").style.display = "";
+      document.getElementById("sam3-preview-filename").textContent = data.image_path.split("/").pop();
+      sam3Log("Preview: " + data.num_detections + " detections in " + data.image_path.split("/").pop());
+    }).catch(function(e) {
+      restoreButtons();
+      sam3Log("Error: " + (e && e.message ? e.message : e));
+    });
+  }
+
+  // Warm the model FIRST via short polls — the initial multi-GB download outlives
+  // any single request (browser timeout locally, proxy idle window on a node).
+  var polls = 0;
+  function pollModel() {
+    polls += 1;
+    if (polls > 240) { restoreButtons(); sam3Log("Model warmup timed out (20 min)."); return; }
+    _sam3Post("/api/plugins/sam3/model-warmup", { device: body.device }, { timeout: 20000 }).then(function(state) {
+      if (state.state === "ready") { runPreview(); return; }
+      if (state.state === "failed") { restoreButtons(); sam3Log("Model load failed: " + (state.detail || "")); return; }
+      btn.textContent = "Downloading model" + ".".repeat(1 + (polls % 3));
+      if (polls === 1) sam3Log("First use on this machine: downloading the SAM3 model (a few GB, one time)...");
+      setTimeout(pollModel, 5000);
+    }).catch(function() { setTimeout(pollModel, 5000); });
+  }
+  pollModel();
 }
 
 // ── Create Table ─────────────────────────────────────────────
