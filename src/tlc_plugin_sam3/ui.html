@@ -121,8 +121,16 @@
             <div id="sam3-folder-ds"></div>
           </div>
           <div class="form-group" id="sam3-table-group" style="display:none">
-            <label class="form-label">Table URL</label>
-            <input type="text" id="sam3-table-url" class="form-control" placeholder="3lc://project/table">
+            <label class="form-label" for="sam3-table-url">Table URL</label>
+            <!-- The host's table picker, the same one YOLO, timm, rf-detr and the importer use: this
+                 field was a bare box you had to paste a 3lc:// URL into (Paul, 2026-09-07). Guarded,
+                 because a host that does not provide the picker still gets a usable field. -->
+            <div style="display:flex;gap:6px">
+              <input type="text" id="sam3-table-url" class="form-control plugin-mono" style="flex:1"
+                     placeholder="Paste URL or click Browse...">
+              <button type="button" class="btn btn-secondary btn-sm"
+                      onclick="if(typeof openTablePicker==='function')openTablePicker('sam3-table-url')">Browse</button>
+            </div>
             <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="sam3ReadLabels()">Read Labels from Table</button>
           </div>
         </div>
