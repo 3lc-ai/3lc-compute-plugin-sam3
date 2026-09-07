@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model-bound routes follow an armed GPU node. Saved configs and the HF token now always live
   on the controller, so they are the same no matter which node is armed (they used to be
   written to whichever worker was armed, and disappeared with the node).
+- The sidebar and the page hero carry Meta's own mark, in one colour.
+
+## [0.2.3] - 2026-09-07
+
+### Changed
+- Requires `3lc>=3.3.0` (was `>=3.0.0`), so the plugin venv resolves the current 3lc release.
 
 ## [0.2.2] - 2026-08-27
 
