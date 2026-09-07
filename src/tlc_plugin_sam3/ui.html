@@ -689,7 +689,7 @@ function sam3RunPreview(sameImage) {
   function pollModel() {
     polls += 1;
     if (polls > 240) { restoreButtons(); sam3Log("Model warmup timed out (20 min)."); return; }
-    _sam3Post("/api/plugins/sam3/model-warmup", { device: body.device }, { timeout: 20000 }).then(function(state) {
+    _sam3Post("/api/plugins/sam3/model-warmup", { device: body.device, retry: polls === 1 }, { timeout: 20000 }).then(function(state) {
       if (state.state === "ready") { runPreview(); return; }
       if (state.state === "failed") { restoreButtons(); sam3Log("Model load failed: " + (state.detail || "")); return; }
       btn.textContent = "Downloading model" + ".".repeat(1 + (polls % 3));

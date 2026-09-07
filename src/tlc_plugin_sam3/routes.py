@@ -69,7 +69,8 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         from tlc_plugin_sam3.inference import warmup_model
 
         ensure_hf_token_env()
-        return warmup_model(str(data.get("device", "cuda") or "cuda"))
+        # The first call of a user action retries a previous failure; the polls that follow only look.
+        return warmup_model(str(data.get("device", "cuda") or "cuda"), retry=bool(data.get("retry", True)))
 
     @get("/model-status", sync_to_thread=True)
     def model_status_route() -> dict[str, Any]:
