@@ -31,8 +31,16 @@ _warmup_state: dict[str, str] = {"state": "cold", "detail": ""}
 _warmup_lock: Any = None
 
 
-def warmup_model(device: str = "cuda") -> dict[str, str]:
-    """Start loading the model in the background (idempotent); returns current state."""
+def warmup_model(device: str = "cuda", retry: bool = True) -> dict[str, str]:
+    """Start loading the model in the background (idempotent); returns current state.
+
+    *retry* asks for a fresh attempt after a failure. The page polls this route every five
+    seconds, and each poll used to start a new attempt: a permanent error — a gated model the
+    token cannot read — was retried two hundred times and never once observed by the caller,
+    which sat on "downloading the model" for the full twenty minutes and then reported a
+    timeout. The real reason was a 401 in the log (Paul, 2026-09-07, SAM3 on a GPU node).
+    A poll now sees the failure; only a fresh user action retries.
+    """
     import threading
 
     global _warmup_lock
@@ -43,6 +51,8 @@ def warmup_model(device: str = "cuda") -> dict[str, str]:
             _warmup_state.update(state="ready", detail="")
             return dict(_warmup_state)
         if _warmup_state["state"] == "warming":
+            return dict(_warmup_state)
+        if _warmup_state["state"] == "failed" and not retry:
             return dict(_warmup_state)
         _warmup_state.update(state="warming", detail="downloading/loading SAM3 weights")
 
