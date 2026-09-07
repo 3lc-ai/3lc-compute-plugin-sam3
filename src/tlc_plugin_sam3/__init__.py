@@ -551,8 +551,9 @@ def _run_create_table(ctx: JobContext) -> str:
         ctx.metric("table", table_url)
         _log(ctx, f"Created table: {table.url} ({total} images)")
 
-        # Register URL alias if requested (only for folder-based sources)
-        if folder and params.get("alias_enabled", True):
+        # An alias is always registered for a folder source — the widget no longer offers to skip it,
+        # and a table of absolute paths only works on the machine that wrote it (Paul, 2026-09-07).
+        if folder:
             from tlc_plugin_sdk.shared.aliases import default_alias_token, register_alias
 
             token = str(params.get("alias_token", "") or "").strip() or default_alias_token(project_name)
