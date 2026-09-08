@@ -72,6 +72,8 @@ def model_status() -> dict[str, str]:
     if _model is not None:
         return {"state": "ready", "detail": ""}
     return dict(_warmup_state)
+
+
 _processor = None
 _device: str = "cpu"
 
