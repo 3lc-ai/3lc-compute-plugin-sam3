@@ -7,11 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- Manifest declares `node_routes = ["/preview", "/model-warmup", "/model-status"]`: only the
-  model-bound routes follow an armed GPU node. Saved configs and the HF token now always live
-  on the controller, so they are the same no matter which node is armed (they used to be
-  written to whichever worker was armed, and disappeared with the node).
+### Added
+- `POST /model-warmup` starts the multi-GB model load on a background thread and returns at
+  once; `GET /model-status` reports `cold | warming | ready | failed`. The page warms the model
+  through short polls before the first preview instead of one long request that a browser
+  timeout or a proxy idle window could kill. A load that fails (a gated model the token cannot
+  read) is reported on the next poll; only a fresh user action retries it.
+- The HF token is persisted in the plugin's config directory and loaded into the process
+  environment on demand, so it survives worker restarts instead of living only in the
+  worker's environment.
+- The manifest declares `node_routes = ["/preview", "/model-warmup", "/model-status"]`, the
+  routes bound to the loaded model. A host without remote-node support ignores the key.
+- The Table URL field has the host's table picker (Browse), like the other plugins.
+- The sidebar and the page hero carry Meta's mark.
+
+### Fixed
+- The `sam3` extra declares the imports Meta's `sam3` wheel uses without declaring them
+  (`psutil`, `opencv-python-headless`, `scipy`, `matplotlib`, and `decord` on Linux), so a
+  freshly provisioned venv no longer fails at request time with `No module named 'psutil'`.
 
 ## [0.2.3] - 2026-09-07
 
