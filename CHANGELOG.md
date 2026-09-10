@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-09-10
+
 ### Added
 - `POST /model-warmup` starts the multi-GB model load on a background thread and returns at
   once; `GET /model-status` reports `cold | warming | ready | failed`. The page warms the model
@@ -20,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   routes bound to the loaded model. A host without remote-node support ignores the key.
 - The Table URL field has the host's table picker (Browse), like the other plugins.
 - The sidebar and the page hero carry Meta's mark.
+
+### Changed
+- Requires plugin SDK `>=0.4.0,<0.5.0` (was `>=0.3.1,<0.4.0`).
 
 ### Fixed
 - The `sam3` extra declares the imports Meta's `sam3` wheel uses without declaring them
