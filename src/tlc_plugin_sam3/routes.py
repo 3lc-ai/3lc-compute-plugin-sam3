@@ -41,11 +41,42 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         if not token:
             return {"error": "token is required"}
         os.environ["HF_TOKEN"] = token
+        # Persist: env alone dies with the worker process (and never reaches a
+        # remote GPU worker); the config dir survives restarts and is seeded to nodes.
+        from tlc_plugin_sam3.config_store import persist_hf_token
+
+        try:
+            persist_hf_token(token)
+        except Exception as exc:
+            return {"ok": True, "warning": f"token active but not persisted: {exc}"}
         return {"ok": True}
 
-    @get("/hf-token-status", sync_to_thread=False)
+    @get("/hf-token-status", sync_to_thread=True)
     def hf_token_status() -> dict[str, Any]:
+        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+
+        ensure_hf_token_env()
         return {"has_token": bool(os.environ.get("HF_TOKEN", ""))}
+
+    @post("/model-warmup", status_code=200, sync_to_thread=True)
+    def model_warmup(data: dict[str, Any]) -> dict[str, Any]:
+        """Kick off the (multi-GB, once-per-machine) model load; returns immediately.
+
+        The fragment polls ``/model-status`` afterwards — short requests that no
+        browser timeout or proxy idle window can kill, unlike one long preview call.
+        """
+        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+        from tlc_plugin_sam3.inference import warmup_model
+
+        ensure_hf_token_env()
+        # The first call of a user action retries a previous failure; the polls that follow only look.
+        return warmup_model(str(data.get("device", "cuda") or "cuda"), retry=bool(data.get("retry", True)))
+
+    @get("/model-status", sync_to_thread=True)
+    def model_status_route() -> dict[str, Any]:
+        from tlc_plugin_sam3.inference import model_status
+
+        return model_status()
 
     # ── Preview (CPU-bound SAM3 inference — sync_to_thread keeps the event loop free) ──
 
@@ -53,6 +84,9 @@ def get_route_handlers() -> list[BaseRouteHandler]:
     def preview(data: dict[str, Any]) -> Response[dict[str, Any]]:
         import traceback
 
+        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+
+        ensure_hf_token_env()  # model download needs HF_TOKEN; env dies with the process
         try:
             result = _run_preview(data)
         except Exception as exc:
@@ -154,6 +188,8 @@ def get_route_handlers() -> list[BaseRouteHandler]:
     return [
         set_hf_token,
         hf_token_status,
+        model_warmup,
+        model_status_route,
         preview,
         list_images,
         read_labels,
