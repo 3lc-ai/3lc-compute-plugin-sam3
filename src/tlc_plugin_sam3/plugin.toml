@@ -2,7 +2,7 @@
 id = "sam3"
 name = "SAM3"
 description = "Auto-label images with SAM3 — preview results, create tables, and run predictions with text prompts."
-version = "0.2.3"
+version = "0.2.5"
 min_service_version = "0.1.0"
 icon = "△"
 # SAM 3 is Meta's model, so the sidebar carries Meta's own mark in one colour, the way the other
