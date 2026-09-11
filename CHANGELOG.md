@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The preview button no longer hangs for up to 20 minutes when the worker cannot answer
+  `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build
+  answers 404) or three failed polls in a row now stops the loop and says why in the log.
+
 ## [0.2.5] - 2026-09-11
 
 ### Fixed
