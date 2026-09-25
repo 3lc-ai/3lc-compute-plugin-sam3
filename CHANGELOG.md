@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A folder source always gets its URL alias; the widget no longer offers to skip it. A table of
   absolute paths only works on the machine that wrote it, which a remote node is not.
+- Runs, tables and their URL aliases are created under the project root the job carries
+  (`ctx.project_root_url`), not the worker's configured root.
 ### Fixed
 - The preview button no longer hangs for up to 20 minutes when the worker cannot answer
   `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build
