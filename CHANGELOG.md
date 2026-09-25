@@ -9,9 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
+- Resolve the plugin SDK from the explicit `staging` index declared in `pyproject.toml`; developers and CI
+  need only `UV_INDEX_STAGING_USERNAME` / `UV_INDEX_STAGING_PASSWORD`.
 - Stamp and validate package and manifest versions together before publication.
 - Manual builds publish only to private CloudRepo when explicitly requested.
 
+- A folder source always gets its URL alias; the widget no longer offers to skip it. A table of
+  absolute paths only works on the machine that wrote it, which a remote node is not.
+- Runs, tables and their URL aliases are created under the project root the job carries
+  (`ctx.project_root_url`), not the worker's configured root.
+### Fixed
+- The preview button no longer hangs for up to 20 minutes when the worker cannot answer
+  `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build
+  answers 404) or three failed polls in a row now stops the loop and says why in the log.
 
 ## [0.2.5] - 2026-09-11
 
