@@ -81,7 +81,7 @@ class SAM3Plugin(ComputePlugin):
         mode = str(params.get("mode", "predict") or "predict")
         config_id = (str(params.get("config_id", "") or "").strip()) or None
         # The root the host stamped for this job; None (an SDK without the property) keeps tlc's default.
-        root = getattr(ctx, "project_root_url", "") or None
+        root = ctx.project_root_url or None
 
         try:
             if mode == "predict":

@@ -21,12 +21,12 @@ class _Stop(Exception):
     """Raised by the patched ``tlc.init`` so predict stops right after creating the run."""
 
 
-class _OldSdkContext(JobContext):
-    """A context from an SDK that predates ``project_root_url``."""
+class _NoRootContext(JobContext):
+    """A context whose worker cannot name a root (no stamped key, no ``tlc`` root)."""
 
     @property
     def project_root_url(self) -> str:
-        raise AttributeError(name="project_root_url")
+        return ""
 
 
 def _ctx(tmp_path: Path, params: dict[str, Any], cls: type[JobContext] = JobContext) -> JobContext:
@@ -107,9 +107,9 @@ def test_create_and_predict_share_the_job_root(tmp_path: Path, stubs: dict[str, 
     assert stubs["init"]["root_url"] == "s3://r"
 
 
-def test_without_the_property_the_tlc_default_root_is_kept(tmp_path: Path, stubs: dict[str, Any]) -> None:
+def test_without_a_root_the_tlc_default_root_is_kept(tmp_path: Path, stubs: dict[str, Any]) -> None:
     with pytest.raises(_Stop):
-        SAM3Plugin().run_job(_ctx(tmp_path, {**_CREATE, "mode": "create_and_predict"}, _OldSdkContext))
+        SAM3Plugin().run_job(_ctx(tmp_path, {**_CREATE, "mode": "create_and_predict"}, _NoRootContext))
     assert stubs["writer"]["root_url"] is None
     assert stubs["alias"]["root_url"] is None
     assert stubs["init"]["root_url"] is None
