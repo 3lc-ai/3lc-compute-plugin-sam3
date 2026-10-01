@@ -15,7 +15,6 @@ inference — all blocking work.
 from __future__ import annotations
 
 import logging
-import os
 import random
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
@@ -33,30 +32,12 @@ logger = logging.getLogger(__name__)
 def get_route_handlers() -> list[BaseRouteHandler]:
     """Build SAM3's custom route handlers (fresh per call, for per-app registration)."""
 
-    # ── HuggingFace token ──
-
-    @post("/set-hf-token", status_code=200, sync_to_thread=True)
-    def set_hf_token(data: dict[str, Any]) -> dict[str, Any]:
-        token = str(data.get("token", "")).strip()
-        if not token:
-            return {"error": "token is required"}
-        os.environ["HF_TOKEN"] = token
-        # Persist: env alone dies with the worker process (and never reaches a
-        # remote GPU worker); the config dir survives restarts and is seeded to nodes.
-        from tlc_plugin_sam3.config_store import persist_hf_token
-
-        try:
-            persist_hf_token(token)
-        except Exception as exc:
-            return {"ok": True, "warning": f"token active but not persisted: {exc}"}
-        return {"ok": True}
-
-    @get("/hf-token-status", sync_to_thread=True)
-    def hf_token_status() -> dict[str, Any]:
-        from tlc_plugin_sam3.config_store import ensure_hf_token_env
-
-        ensure_hf_token_env()
-        return {"has_token": bool(os.environ.get("HF_TOKEN", ""))}
+    # ── Hugging Face token ──
+    #
+    # The token is a SECRET Connection the person chooses in the Hub; the manifest lists the three
+    # routes below under ``credential_routes``, so the host hands the Connection's value to them (and
+    # to jobs), and ``hf_token.resolve`` reads it in the request's context. /model-status needs no
+    # token itself: it is listed so it can say which source a preview would use.
 
     @post("/model-warmup", status_code=200, sync_to_thread=True)
     def model_warmup(data: dict[str, Any]) -> dict[str, Any]:
@@ -65,18 +46,23 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         The fragment polls ``/model-status`` afterwards — short requests that no
         browser timeout or proxy idle window can kill, unlike one long preview call.
         """
-        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+        from tlc_plugin_sam3.hf_token import resolve
         from tlc_plugin_sam3.inference import warmup_model
 
-        ensure_hf_token_env()
+        # Resolved here, in the request's context: the load runs on its own thread.
+        token, source = resolve()
         # The first call of a user action retries a previous failure; the polls that follow only look.
-        return warmup_model(str(data.get("device", "cuda") or "cuda"), retry=bool(data.get("retry", True)))
+        state = warmup_model(
+            str(data.get("device", "cuda") or "cuda"), retry=bool(data.get("retry", True)), token=token
+        )
+        return {**state, "hf_token": source}
 
     @get("/model-status", sync_to_thread=True)
     def model_status_route() -> dict[str, Any]:
+        from tlc_plugin_sam3.hf_token import source
         from tlc_plugin_sam3.inference import model_status
 
-        return model_status()
+        return {**model_status(), "hf_token": source()}
 
     # ── Preview (CPU-bound SAM3 inference — sync_to_thread keeps the event loop free) ──
 
@@ -84,9 +70,6 @@ def get_route_handlers() -> list[BaseRouteHandler]:
     def preview(data: dict[str, Any]) -> Response[dict[str, Any]]:
         import traceback
 
-        from tlc_plugin_sam3.config_store import ensure_hf_token_env
-
-        ensure_hf_token_env()  # model download needs HF_TOKEN; env dies with the process
         try:
             result = _run_preview(data)
         except Exception as exc:
@@ -186,8 +169,6 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         return {"deleted": config_store().delete_config(config_id)}
 
     return [
-        set_hf_token,
-        hf_token_status,
         model_warmup,
         model_status_route,
         preview,

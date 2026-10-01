@@ -68,7 +68,6 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         seen["init"] = kwargs
         raise _Stop
 
-    monkeypatch.setattr("tlc_plugin_sam3.config_store.ensure_hf_token_env", lambda: None)
     monkeypatch.setattr(tlc, "TableWriter", FakeWriter)
     monkeypatch.setattr(tlc, "init", fake_init)
 

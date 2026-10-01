@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from tlc_plugin_sdk import ComputePlugin, JobFailed
 
+from tlc_plugin_sam3 import hf_token as _hf_token  # noqa: F401  (reads the worker's own HF_TOKEN at import)
 from tlc_plugin_sam3 import routes as _routes
 
 if TYPE_CHECKING:
@@ -74,10 +75,12 @@ class SAM3Plugin(ComputePlugin):
                 mode-specific request fields.
 
         """
-        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+        from tlc_plugin_sam3.hf_token import source
 
-        ensure_hf_token_env()  # model download needs HF_TOKEN; the persisted copy survives restarts
         params = ctx.params
+        # The model download reads the job's token itself (hf_token.resolve); only the legacy file is called out.
+        if source() == "legacy-file":
+            _log(ctx, "Hugging Face token: using the legacy token file — choose a Connection on the SAM3 page")
         mode = str(params.get("mode", "predict") or "predict")
         config_id = (str(params.get("config_id", "") or "").strip()) or None
         # The root the host stamped for this job; None (an SDK without the property) keeps tlc's default.

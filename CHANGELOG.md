@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The Hugging Face token is a Connection. The page's token box is replaced by a **Choose…** button
+  that opens the Hub's dialog (`PLUGIN_API.chooseCredential("huggingface")`). There the person picks
+  one of their huggingface token Connections, allows an existing one for SAM3, or adds a token.
+  The manifest declares `credentials = [{service = "huggingface", required = true}]` and
+  `credential_routes = ["/preview", "/model-warmup", "/model-status"]`, so the host hands the
+  Connection's value to jobs and to those routes. `/model-status` (and `/model-warmup`) report
+  which token source the worker uses (`hf_token`: `connection`, `environment`, `legacy-file` or
+  `none`), never the token itself.
+- The model download receives the token explicitly instead of reading `HF_TOKEN` when it runs.
+  That variable is process-wide while a job or request holds a Connection, and the warm-up loads
+  on a thread of its own. A worker's own `HF_TOKEN` is read once, when the plugin is imported.
+
 ### Changed
 - Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
 - Resolve the plugin SDK from the explicit `staging` index declared in `pyproject.toml`; developers and CI
@@ -18,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   absolute paths only works on the machine that wrote it, which a remote node is not.
 - Runs, tables and their URL aliases are created under the project root the job carries
   (`ctx.project_root_url`), not the worker's configured root.
+### Removed
+- `POST /set-hf-token` and `GET /hf-token-status`. Nothing writes `hf-token.json` any more. For this
+  release only, a token file saved by an earlier version is still read when no Connection is chosen
+  and the worker has no `HF_TOKEN`. The page then says "using the legacy token file — choose a
+  Connection", and so does a job's log.
+
 ### Fixed
 - The preview button no longer hangs for up to 20 minutes when the worker cannot answer
   `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build

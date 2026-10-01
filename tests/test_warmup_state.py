@@ -48,7 +48,7 @@ def test_a_permanent_failure_is_reported_not_retried_behind_the_poll(monkeypatch
     the timeout — which is exactly what happened on a GPU node whose HF token had not reached it."""
     calls: list[str] = []
 
-    def loader(device: str) -> None:
+    def loader(device: str, token: str | None = None) -> None:
         calls.append(device)
         msg = "401 Client Error: access to facebook/sam3 is restricted"
         raise RuntimeError(msg)
