@@ -31,8 +31,13 @@ _warmup_state: dict[str, str] = {"state": "cold", "detail": ""}
 _warmup_lock: Any = None
 
 
-def warmup_model(device: str = "cuda", retry: bool = True) -> dict[str, str]:
+def warmup_model(device: str = "cuda", retry: bool = True, token: str | None = None) -> dict[str, str]:
     """Start loading the model in the background (idempotent); returns current state.
+
+    *token* is the Hugging Face token for the download, resolved by the caller in its own request
+    context (:func:`tlc_plugin_sam3.hf_token.resolve`): the load runs on a thread of its own,
+    which sees neither the request's Connection nor, once the request has returned, the
+    environment variable the SDK set for it.
 
     *retry* asks for a fresh attempt after a failure. The page polls this route every five
     seconds, and each poll used to start a new attempt: a permanent error — a gated model the
@@ -58,7 +63,7 @@ def warmup_model(device: str = "cuda", retry: bool = True) -> dict[str, str]:
 
     def _load() -> None:
         try:
-            _ensure_model(device)
+            _ensure_model(device, token)
             _warmup_state.update(state="ready", detail="")
         except Exception as exc:
             _warmup_state.update(state="failed", detail=str(exc)[:300])
@@ -78,11 +83,40 @@ _processor = None
 _device: str = "cpu"
 
 
-def _ensure_model(device: str = "cuda") -> tuple[Any, Any]:
-    """Load SAM3 model on first call, reuse thereafter."""
+# The weights SAM 3 publishes, as ``sam3.model_builder.download_ckpt_from_hf`` fetches them. That
+# helper takes no token (it reads ``HF_TOKEN`` at call time), so the download is done here with the
+# token passed explicitly, and the checkpoint handed to the builder.
+_SAM3_REPO = "facebook/sam3"
+_SAM3_FILES = ("config.json", "sam3.pt")
+
+
+def _download_checkpoint(token: str) -> str:
+    """Download SAM 3's config and checkpoint with *token*; return the checkpoint's local path.
+
+    An empty *token* sends none (``token=False``) rather than letting Hugging Face read
+    ``HF_TOKEN``, which may hold another job's Connection value in this worker right now.
+    """
+    from huggingface_hub import hf_hub_download
+
+    path = ""
+    for filename in _SAM3_FILES:
+        path = hf_hub_download(repo_id=_SAM3_REPO, filename=filename, token=token or False)
+    return path
+
+
+def _ensure_model(device: str = "cuda", token: str | None = None) -> tuple[Any, Any]:
+    """Load SAM3 model on first call, reuse thereafter.
+
+    *token* defaults to the current job's or request's (:func:`tlc_plugin_sam3.hf_token.resolve`),
+    which is right on the job or request thread; the warm-up thread passes the one its request had.
+    """
     global _model, _processor, _device
     if _processor is not None and _device == device:
         return _model, _processor
+    if token is None:
+        from tlc_plugin_sam3.hf_token import resolve
+
+        token = resolve()[0]
 
     from sam3.model.sam3_image_processor import Sam3Processor
     from sam3.model_builder import build_sam3_image_model
@@ -91,7 +125,8 @@ def _ensure_model(device: str = "cuda") -> tuple[Any, Any]:
     import os
 
     bpe_path = os.path.join(os.path.dirname(__file__), "bpe_simple_vocab_16e6.txt.gz")
-    _model = build_sam3_image_model(bpe_path=bpe_path)
+    checkpoint_path = _download_checkpoint(token)
+    _model = build_sam3_image_model(bpe_path=bpe_path, checkpoint_path=checkpoint_path, load_from_HF=False)
     _model.to(device)
     _model.eval()
     _processor = Sam3Processor(_model, device=device, confidence_threshold=0.2)

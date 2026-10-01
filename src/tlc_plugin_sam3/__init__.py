@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from tlc_plugin_sdk import ComputePlugin, JobFailed
 
+from tlc_plugin_sam3 import hf_token as _hf_token  # noqa: F401  (reads the worker's own HF_TOKEN at import)
 from tlc_plugin_sam3 import routes as _routes
 
 if TYPE_CHECKING:
@@ -74,22 +75,26 @@ class SAM3Plugin(ComputePlugin):
                 mode-specific request fields.
 
         """
-        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+        from tlc_plugin_sam3.hf_token import source
 
-        ensure_hf_token_env()  # model download needs HF_TOKEN; the persisted copy survives restarts
         params = ctx.params
+        # The model download reads the job's token itself (hf_token.resolve); only the legacy file is called out.
+        if source() == "legacy-file":
+            _log(ctx, "Hugging Face token: using the legacy token file — choose a Connection on the SAM3 page")
         mode = str(params.get("mode", "predict") or "predict")
         config_id = (str(params.get("config_id", "") or "").strip()) or None
+        # The root the host stamped for this job; None (an SDK without the property) keeps tlc's default.
+        root = ctx.project_root_url or None
 
         try:
             if mode == "predict":
-                _run_predict(ctx)
+                _run_predict(ctx, root_url=root)
             elif mode == "create_table":
-                table_url = _run_create_table(ctx)
+                table_url = _run_create_table(ctx, root_url=root)
                 if table_url:
                     ctx.result(table_url)
             elif mode == "create_and_predict":
-                table_url = _run_create_table(ctx)
+                table_url = _run_create_table(ctx, root_url=root)
                 if ctx.cancelled:
                     return
                 if table_url:
@@ -98,7 +103,7 @@ class SAM3Plugin(ComputePlugin):
                     ctx.result(table_url)
                     # Chain predict on the freshly created table, in the same job.
                     ctx.log(f"Table created at {table_url} — running predict")
-                    _run_predict(ctx, table_url=table_url)
+                    _run_predict(ctx, table_url=table_url, root_url=root)
             else:
                 ctx.fail(f"Unknown mode: {mode}")
 
@@ -138,7 +143,7 @@ def _log(ctx: JobContext, msg: str) -> None:
     ctx.log(msg)
 
 
-def _run_predict(ctx: JobContext, table_url: str = "") -> None:
+def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None = None) -> None:
     """Run SAM3 prediction on a 3LC table.
 
     Args:
@@ -146,6 +151,8 @@ def _run_predict(ctx: JobContext, table_url: str = "") -> None:
             ``device``, ``run_name`` and (for standalone predict) ``table_url``.
         table_url: Overrides ``ctx.params["table_url"]`` — set by the
             ``create_and_predict`` chain to point at the freshly created table.
+        root_url: The project root the run is created under (the job's ``project_root_url``);
+            ``None`` keeps tlc's default root.
 
     """
     import numpy as np
@@ -193,6 +200,7 @@ def _run_predict(ctx: JobContext, table_url: str = "") -> None:
     # Initialise 3LC run
     run = tlc.init(
         project_name=table.project_name,
+        root_url=root_url,
         run_name=run_name,
         description=f"SAM3 predictions: {', '.join(labels)} ({modality})",
     )
@@ -413,13 +421,15 @@ def _run_predict(ctx: JobContext, table_url: str = "") -> None:
     _log(ctx, f"Done! Run URL: {run.url}")
 
 
-def _run_create_table(ctx: JobContext) -> str:
+def _run_create_table(ctx: JobContext, *, root_url: str | None = None) -> str:
     """Create a 3LC table from an image folder or an existing table.
 
     Args:
         ctx: Job context. ``ctx.params`` carries ``folder`` OR ``source_table_url``,
             plus ``labels``, ``modality``, ``project_name``, ``dataset_name``,
             ``table_name``, alias fields, and optional ``max_images``.
+        root_url: The project root the table (and its alias) is created under (the job's
+            ``project_root_url``); ``None`` keeps tlc's default root.
 
     Returns:
         The URL of the created table, or ``""`` if cancelled before finalize.
@@ -503,6 +513,7 @@ def _run_create_table(ctx: JobContext) -> str:
             table_name=table_name,
             dataset_name=dataset_name,
             project_name=project_name,
+            root_url=root_url,
             description=f"SAM3 dataset: {', '.join(labels)} ({modality})",
             schema=schemas,
             if_exists="overwrite",
@@ -551,13 +562,14 @@ def _run_create_table(ctx: JobContext) -> str:
         ctx.metric("table", table_url)
         _log(ctx, f"Created table: {table.url} ({total} images)")
 
-        # Register URL alias if requested (only for folder-based sources)
-        if folder and params.get("alias_enabled", True):
+        # An alias is always registered for a folder source — the widget no longer offers to skip it,
+        # and a table of absolute paths only works on the machine that wrote it (Paul, 2026-09-07).
+        if folder:
             from tlc_plugin_sdk.shared.aliases import default_alias_token, register_alias
 
             token = str(params.get("alias_token", "") or "").strip() or default_alias_token(project_name)
             alias_folder = str(params.get("alias_folder", "") or "").strip() or folder
-            register_alias(project_name=project_name, image_folder=alias_folder, alias_token=token)
+            register_alias(project_name=project_name, image_folder=alias_folder, alias_token=token, root_url=root_url)
             _log(ctx, f"Registered alias <{token}> → {alias_folder}")
 
         return table_url

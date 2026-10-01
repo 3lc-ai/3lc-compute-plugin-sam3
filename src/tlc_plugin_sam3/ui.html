@@ -67,15 +67,11 @@
   </div>
 </div>
 
-<!-- ── HuggingFace Token Banner ───────────────────────────── -->
+<!-- ── Hugging Face token: a Connection the Hub keeps ────────── -->
 <div class="plugin-info-banner" id="sam3-hf-card">
   <span style="display:inline-flex"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="14" height="7" rx="2"/><circle cx="10" cy="6" r="4"/><path d="M10 10v3"/></svg></span>
-  <span id="sam3-hf-label">HuggingFace token required</span>
-  <span id="sam3-hf-input-row" style="display:flex;gap:6px;align-items:center;flex:1">
-    <input type="password" id="sam3-hf-token" class="form-control" placeholder="hf_..." style="flex:1;max-width:220px">
-    <button class="btn btn-ghost btn-sm" onclick="sam3SetHfToken()">Save</button>
-  </span>
-  <button class="btn btn-ghost btn-sm" id="sam3-hf-change-btn" style="display:none" onclick="document.getElementById('sam3-hf-input-row').style.display='flex';this.style.display='none'">Change</button>
+  <span id="sam3-hf-label" style="flex:1">Hugging Face token…</span>
+  <button class="btn btn-ghost btn-sm" id="sam3-hf-choose-btn" style="display:none" onclick="sam3ChooseHfToken()">Choose…</button>
   <span id="sam3-hf-status" class="text-sm"></span>
 </div>
 
@@ -405,27 +401,59 @@ function sam3AddLabel() {
 }
 function sam3RemoveLabel(idx) { _sam3Labels.splice(idx, 1); sam3RenderLabels(); }
 
-// ── HuggingFace Token ────────────────────────────────────────
-function sam3SetHfToken() {
-  var token = document.getElementById("sam3-hf-token").value.trim(); if (!token) return;
-  _sam3Post("/api/plugins/sam3/set-hf-token", { token: token }).then(function(data) {
-    if (data.error) { document.getElementById("sam3-hf-status").textContent = "Error: " + data.error; return; }
-    document.getElementById("sam3-hf-label").textContent = "HuggingFace token is set";
-    document.getElementById("sam3-hf-input-row").style.display = "none";
-    document.getElementById("sam3-hf-change-btn").style.display = "";
-    sam3Log("HuggingFace token set");
-  }).catch(function(e) { document.getElementById("sam3-hf-status").textContent = "Error: " + e; });
+// ── Hugging Face token ───────────────────────────────────────
+// SAM 3's weights are gated, so the download needs a token. It is a SECRET Connection the Hub
+// keeps: PLUGIN_API.chooseCredential lets the person pick (or add) one, and the Hub sends the
+// choice with this plugin's runs and its preview / warm-up / status calls (the manifest's
+// credential_routes). This page never sees the value. /model-status says which source the worker
+// would use ("connection", "environment", "legacy-file" or "none").
+var _SAM3_HF_SERVICE = "huggingface";
+var _sam3HfSource = "", _sam3ModelReady = false;
+function _sam3HfChooser() { return typeof PLUGIN_API.chooseCredential === "function"; }
+function _sam3HfChosen() {
+  return typeof PLUGIN_API.credential === "function" ? PLUGIN_API.credential(_SAM3_HF_SERVICE) : null;
 }
-function sam3CheckHfToken() {
-  _sam3Fetch("/api/plugins/sam3/hf-token-status").then(function(r) { return r.json(); }).then(function(data) {
-    if (data.has_token) {
-      document.getElementById("sam3-hf-label").textContent = "HuggingFace token is set";
-      document.getElementById("sam3-hf-input-row").style.display = "none";
-      document.getElementById("sam3-hf-change-btn").style.display = "";
-    }
-  }).catch(function() {});
+function sam3RenderHfToken(source) {
+  _sam3HfSource = source || "";
+  var label = document.getElementById("sam3-hf-label"), btn = document.getElementById("sam3-hf-choose-btn");
+  var chosen = _sam3HfChosen(), text;
+  if (source === "connection") text = "Hugging Face token: your Connection";
+  else if (chosen) text = "Hugging Face token: a Connection is chosen, but this compute service does not pass it on yet"
+    + (source === "legacy-file" ? " — using the legacy token file meanwhile" : "");
+  else if (source === "legacy-file") text = "Using the legacy token file — choose a Connection";
+  else if (source === "environment") text = "Hugging Face token: from the worker's environment — choose a Connection to use your own";
+  else text = "Hugging Face token required — choose a Connection";
+  if (!_sam3HfChooser()) text += " (this Hub cannot choose one; update it)";
+  label.textContent = text;
+  btn.style.display = _sam3HfChooser() ? "" : "none";
+  btn.textContent = chosen ? "Change…" : "Choose…";
 }
-sam3CheckHfToken();
+function sam3RefreshHfToken() {
+  document.getElementById("sam3-hf-status").textContent = "";
+  return _sam3Fetch("/api/plugins/sam3/model-status").then(function(r) { return r.json(); }).then(function(data) {
+    _sam3ModelReady = !!(data && data.state === "ready");
+    sam3RenderHfToken(data && data.hf_token);
+  }).catch(function(e) {
+    sam3RenderHfToken("");
+    document.getElementById("sam3-hf-status").textContent = "Error: " + (e && e.message ? e.message : e);
+  });
+}
+function sam3ChooseHfToken() {
+  if (!_sam3HfChooser()) return Promise.resolve(null);
+  return PLUGIN_API.chooseCredential(_SAM3_HF_SERVICE).then(function(id) {
+    if (id) sam3Log("Hugging Face token: Connection chosen");
+    return sam3RefreshHfToken().then(function() { return id; });
+  }).catch(function(e) {
+    document.getElementById("sam3-hf-status").textContent = "Error: " + (e && e.message ? e.message : e);
+    return null;
+  });
+}
+// Before the first download: with no token from anywhere, ask (cancelling still tries).
+function _sam3EnsureHfToken() {
+  if (_sam3ModelReady || _sam3HfSource !== "none" || _sam3HfChosen() || !_sam3HfChooser()) return Promise.resolve();
+  return sam3ChooseHfToken();
+}
+sam3RefreshHfToken();
 
 // ── Source toggle ────────────────────────────────────────────
 function sam3SourceChanged() {
@@ -693,19 +721,33 @@ function sam3RunPreview(sameImage) {
 
   // Warm the model FIRST via short polls — the initial multi-GB download outlives
   // any single request (browser timeout locally, proxy idle window on a node).
-  var polls = 0;
+  // A reply without a warm-up state is not "still warming": it is a worker that has no
+  // /model-warmup route (an older plugin build on a remote node answers 404), and a run of
+  // failed polls is a worker that is gone. Both stop the loop with a reason in the log.
+  var polls = 0, failures = 0;
   function pollModel() {
     polls += 1;
     if (polls > 240) { restoreButtons(); sam3Log("Model warmup timed out (20 min)."); return; }
     _sam3Post("/api/plugins/sam3/model-warmup", { device: body.device, retry: polls === 1 }, { timeout: 20000 }).then(function(state) {
+      if (!state || typeof state.state !== "string") {
+        restoreButtons();
+        sam3Log("Model warmup: the worker did not answer /model-warmup (" + (state && (state.detail || state.error) || "unexpected reply") + "). " +
+                "On a remote node this usually means the node runs an older SAM3 plugin build than this one.");
+        return;
+      }
+      failures = 0;
       if (state.state === "ready") { runPreview(); return; }
       if (state.state === "failed") { restoreButtons(); sam3Log("Model load failed: " + (state.detail || "")); return; }
       btn.textContent = "Downloading model" + ".".repeat(1 + (polls % 3));
       if (polls === 1) sam3Log("First use on this machine: downloading the SAM3 model (a few GB, one time)...");
       setTimeout(pollModel, 5000);
-    }).catch(function() { setTimeout(pollModel, 5000); });
+    }).catch(function(e) {
+      failures += 1;
+      if (failures >= 3) { restoreButtons(); sam3Log("Model warmup: no answer from the worker after " + failures + " attempts (" + (e && e.message ? e.message : e) + ")."); return; }
+      setTimeout(pollModel, 5000);
+    });
   }
-  pollModel();
+  _sam3EnsureHfToken().then(pollModel);
 }
 
 // ── Create Table ─────────────────────────────────────────────
