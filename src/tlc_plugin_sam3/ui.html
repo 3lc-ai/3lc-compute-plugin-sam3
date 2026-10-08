@@ -264,9 +264,6 @@
         <div id="sam3-create-status" class="text-sm" style="margin-top:6px"></div>
       </div>
     </div>
-    <!-- Hidden input for backward compat with queue polling code -->
-    <input type="hidden" id="sam3-predict-table">
-    <div id="sam3-predict-labels-info" style="display:none"></div>
 
     <!-- Progress -->
     <div class="card mb-16">
@@ -471,7 +468,6 @@ function sam3ReadLabels() {
       sam3RenderLabels();
       if (data.modality) document.getElementById("sam3-modality").value = data.modality;
       sam3Log("Read " + data.labels.length + " labels: " + data.labels.join(", "));
-      document.getElementById("sam3-predict-table").value = url;
     } else { sam3Log("No labels found in table schema"); }
   }).catch(function(e) { sam3Log("Error: " + e); });
 }
@@ -771,41 +767,6 @@ function sam3RunPreview(sameImage) {
   });
 }
 
-// ── Create Table ─────────────────────────────────────────────
-function sam3CreateTable() {
-  if (_sam3Labels.length === 0) { sam3Log("Add at least one label first"); return; }
-  var sourceType = document.getElementById("sam3-source-type").value;
-  var projectName = document.getElementById("sam3-project-name").value.trim();
-  var datasetName = document.getElementById("sam3-dataset-name").value.trim() || "train";
-  var tableName = document.getElementById("sam3-table-name").value.trim() || "initial";
-  if (!projectName) { sam3Log("Enter a project name"); return; }
-
-  var body = {
-    mode: "create_table",
-    labels: _sam3LabelNames(), label_colors: _sam3LabelColors(),
-    modality: document.getElementById("sam3-modality").value, project_name: projectName,
-    dataset_name: datasetName, table_name: tableName,
-  };
-
-  if (sourceType === "table") {
-    var tableUrl = document.getElementById("sam3-table-url").value.trim();
-    if (!tableUrl) { sam3Log("Enter a table URL"); return; }
-    body.source_table_url = tableUrl;
-  } else {
-    var folder = document.getElementById("sam3-folder").value.trim();
-    if (!folder) { sam3Log("Enter a folder path in Setup"); return; }
-    body.folder = folder;
-    var alias = _tlcGetAliasValues("sam3");
-    body.alias_enabled = alias.alias_enabled;
-    body.alias_token = alias.alias_token;
-    body.alias_folder = alias.alias_folder;
-  }
-
-  sam3AutoSave();
-  sam3Log("Creating table...");
-  _sam3SubmitJob(body, "Table creation job submitted", "Job submitted — see Progress");
-}
-
 // ── Create & Predict (combined) ─────────────────────────────
 function sam3CreateAndPredict() {
   if (_sam3Labels.length === 0) { sam3Log("Add at least one label first"); return; }
@@ -853,34 +814,6 @@ function sam3CreateAndPredict() {
   sam3Log("Creating table & queuing prediction...");
   _sam3SubmitJob(body, "Job submitted — table will be created, then prediction runs automatically",
     "Creating table → prediction will start automatically");
-}
-
-// ── Predict ──────────────────────────────────────────────────
-function sam3ReadPredictLabels() {
-  var tableUrl = document.getElementById("sam3-predict-table").value.trim();
-  var infoEl = document.getElementById("sam3-predict-labels-info");
-  if (!tableUrl) { infoEl.textContent = ""; return; }
-  infoEl.textContent = "Reading table schema...";
-  _sam3Post("/api/plugins/sam3/read-labels", { table_url: tableUrl }).then(function(data) {
-    if (data.error) { infoEl.textContent = "Error: " + data.error; return; }
-    if (data.labels && data.labels.length > 0) {
-      infoEl.textContent = "Labels: " + data.labels.join(", ") + " | " + data.modality + " | " + data.table_length + " images";
-    } else { infoEl.textContent = "No labels found"; }
-  }).catch(function() { infoEl.textContent = "Could not read table"; });
-}
-function sam3RunPredict() {
-  var tableUrl = document.getElementById("sam3-predict-table").value.trim();
-  if (!tableUrl) { sam3Log("Enter a table URL"); return; }
-  sam3AutoSave();
-  sam3Log("Submitting prediction job...");
-  _sam3SubmitJob({
-    mode: "predict",
-    table_url: tableUrl, project_name: document.getElementById("sam3-project-name").value.trim(),
-    confidence: parseFloat(document.getElementById("sam3-confidence").value),
-    embedding_dim: parseInt(document.getElementById("sam3-embed-dim").value),
-    device: document.getElementById("sam3-device").value,
-    config_id: _sam3CurrentConfigId || "",
-  }, "Prediction job submitted", "Prediction job submitted — see Progress");
 }
 
 // ── Jobs: the generic job channel via PluginJobs, plus the plugin's own events ──
@@ -1031,7 +964,6 @@ _sam3SeedFromHost();
     sam3LoadConfigs();
     document.getElementById("sam3-source-type").value = "table"; sam3SourceChanged();
     document.getElementById("sam3-table-url").value = tableParam;
-    document.getElementById("sam3-predict-table").value = tableParam;
     setTimeout(function() { sam3ReadLabels(); }, 500);
   } else {
     var lastId = localStorage.getItem(_SAM3_STORAGE_KEY);
