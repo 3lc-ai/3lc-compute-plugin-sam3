@@ -59,7 +59,12 @@ def warmup_model(device: str = "cuda", retry: bool = True, token: str | None = N
             return dict(_warmup_state)
         if _warmup_state["state"] == "failed" and not retry:
             return dict(_warmup_state)
-        _warmup_state.update(state="warming", detail="downloading/loading SAM3 weights")
+        _warmup_state.update(
+            state="warming",
+            detail="loading the SAM3 weights from this machine's cache"
+            if weights_cached()
+            else "downloading the SAM3 weights (a few GB, once per machine)",
+        )
 
     def _load() -> None:
         try:
@@ -88,6 +93,25 @@ _device: str = "cpu"
 # token passed explicitly, and the checkpoint handed to the builder.
 _SAM3_REPO = "facebook/sam3"
 _SAM3_FILES = ("config.json", "sam3.pt")
+
+
+def weights_cached() -> bool:
+    """Whether this machine's Hugging Face cache already holds SAM 3's weights.
+
+    The cache is Hugging Face's own (``HF_HUB_CACHE``, else ``HF_HOME``/hub, else
+    ``~/.cache/huggingface/hub``), shared by every worker under the same home and kept across
+    worker restarts; a node agent passes those variables through to its workers. Only says what a
+    warm-up will do, so the page does not announce a download that is a load from disk.
+    """
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except ImportError:
+        return False
+    try:
+        return all(isinstance(try_to_load_from_cache(_SAM3_REPO, name), str) for name in _SAM3_FILES)
+    except Exception:
+        logger.debug("Could not look up the SAM3 weights in the Hugging Face cache", exc_info=True)
+        return False
 
 
 def _download_checkpoint(token: str) -> str:

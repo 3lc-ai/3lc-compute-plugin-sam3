@@ -762,8 +762,9 @@ function sam3RunPreview(sameImage) {
       failures = 0;
       if (state.state === "ready") { runPreview(); return; }
       if (state.state === "failed") { restoreButtons(); sam3Log("Model load failed: " + (state.detail || "")); return; }
-      btn.textContent = "Downloading model" + ".".repeat(1 + (polls % 3));
-      if (polls === 1) sam3Log("First use on this machine: downloading the SAM3 model (a few GB, one time)...");
+      btn.textContent = "Loading model" + ".".repeat(1 + (polls % 3));
+      // The worker says whether it is downloading the weights or loading them from its cache.
+      if (polls === 1) sam3Log("SAM3 model: " + (state.detail || "loading") + "...");
       setTimeout(pollModel, 5000);
     }).catch(function(e) {
       failures += 1;

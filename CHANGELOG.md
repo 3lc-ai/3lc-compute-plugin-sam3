@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The URL alias card no longer offers to copy the folder next to the table. SAM3 never made that
   copy (it sends no `alias_copy_*` fields), so the checked offer promised something the run did not
   do. Moving data to a GPU node is the Hub's run dialog's job.
+- The warm-up says whether it downloads the weights or loads them from the machine's Hugging Face
+  cache, and the page logs that. It used to announce "downloading the SAM3 model" for every cold
+  worker, so a worker restart on a warm machine looked like a second download.
 
 ## [0.2.5] - 2026-09-11
 
