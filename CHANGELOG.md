@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "table_url"]`. A Hub that reads it plans that data for a run (stream it, copy it to the GPU node,
   or use a path already on the node) and refuses a folder that only exists on the person's own
   computer, also for the node routes `/preview` and `/check-source`. Older hosts ignore the key.
+- A table source is checked against the Hub's "Run on:" target when it is picked and when the
+  target changes (`PLUGIN_API.checkDataForRunTarget` / `onRunTargetChange`). A table a GPU node
+  cannot read is flagged under the field before the run is submitted. A Hub that annotates table
+  inputs itself (`hostChecksTableInputs`), or one without the API, shows no second note.
 - The model download receives the token explicitly instead of reading `HF_TOKEN` when it runs.
   The environment is shared by every job and request in a worker, and the warm-up loads on a
   thread of its own. A worker's own `HF_TOKEN` is read once, when the plugin is imported.

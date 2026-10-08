@@ -123,11 +123,12 @@
                  because a host that does not provide the picker still gets a usable field. -->
             <div style="display:flex;gap:6px">
               <input type="text" id="sam3-table-url" class="form-control plugin-mono" style="flex:1"
-                     placeholder="Paste URL or click Browse...">
+                     placeholder="Paste URL or click Browse..." oninput="sam3CheckTableAgainstRunTarget()">
               <button type="button" class="btn btn-secondary btn-sm"
                       onclick="if(typeof openTablePicker==='function')openTablePicker('sam3-table-url')">Browse</button>
             </div>
             <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="sam3ReadLabels()">Read Labels from Table</button>
+            <div id="sam3-run-target-data-note" class="form-help" style="display:none"></div>
           </div>
         </div>
         <div class="form-help">Point to an image folder or existing 3LC table. SAM3 will process every image in the source.</div>
@@ -457,6 +458,32 @@ function sam3SourceChanged() {
   var type = document.getElementById("sam3-source-type").value;
   document.getElementById("sam3-folder-group").style.display = type === "folder" ? "" : "none";
   document.getElementById("sam3-table-group").style.display = type === "table" ? "" : "none";
+  sam3CheckTableAgainstRunTarget();
+}
+
+// Selection-time data check against the Hub's "Run on:" target: warn the moment a table is picked
+// (or the target flips), not when the run is submitted. Optional bridge API — feature-detected and
+// silent on Hubs that predate it. A Hub that annotates every table input itself says so with
+// hostChecksTableInputs; the note is then left to it, so it is not shown twice.
+function sam3CheckTableAgainstRunTarget() {
+  var note = document.getElementById("sam3-run-target-data-note");
+  if (!note || !window.PLUGIN_API || typeof PLUGIN_API.checkDataForRunTarget !== "function") return;
+  if (PLUGIN_API.hostChecksTableInputs) { note.style.display = "none"; return; }
+  var url = document.getElementById("sam3-table-url").value.trim();
+  var isTable = document.getElementById("sam3-source-type").value === "table";
+  var target = (typeof PLUGIN_API.getRunTarget === "function") ? PLUGIN_API.getRunTarget() : { target: "local" };
+  if (!isTable || !url || !target || target.target !== "node") { note.style.display = "none"; return; }
+  PLUGIN_API.checkDataForRunTarget(url).then(function(verdict) {
+    if (document.getElementById("sam3-table-url").value.trim() !== url) return;  // stale
+    var notes = (verdict && verdict.notes) || [];
+    if (verdict && verdict.ok && !notes.length) { note.style.display = "none"; return; }
+    note.textContent = (verdict && verdict.ok ? "⚠️ " : "❌ This will NOT run on the GPU node: ") + notes.join(" ");
+    note.style.color = verdict && verdict.ok ? "var(--warning, #d97706)" : "var(--error, #dc2626)";
+    note.style.display = "";
+  }).catch(function() { note.style.display = "none"; });
+}
+if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
+  PLUGIN_API.onRunTargetChange(sam3CheckTableAgainstRunTarget);
 }
 function sam3ReadLabels() {
   var url = document.getElementById("sam3-table-url").value.trim(); if (!url) return;
@@ -565,6 +592,7 @@ function sam3LoadConfig(configId) {
     document.getElementById("sam3-source-type").value = c.source_type || "folder"; sam3SourceChanged();
     document.getElementById("sam3-folder").value = c.folder || "";
     document.getElementById("sam3-table-url").value = c.table_url || "";
+    sam3CheckTableAgainstRunTarget();
     _sam3Labels = (c.labels || []).map(function(l) { return { name: l.name, color: l.color }; });
     _sam3ColorIndex = _sam3Labels.length;
     sam3RenderLabels();
@@ -968,6 +996,7 @@ _sam3SeedFromHost();
     sam3LoadConfigs();
     document.getElementById("sam3-source-type").value = "table"; sam3SourceChanged();
     document.getElementById("sam3-table-url").value = tableParam;
+    sam3CheckTableAgainstRunTarget();
     setTimeout(function() { sam3ReadLabels(); }, 500);
   } else {
     var lastId = localStorage.getItem(_SAM3_STORAGE_KEY);

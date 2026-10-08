@@ -32,3 +32,11 @@ def test_the_preview_checks_the_source_before_warming_the_model() -> None:
     assert check < preview.index("_sam3EnsureHfToken().then(pollModel)")
     # The warm-up is started from the check's answer and from nowhere else.
     assert preview.count("_sam3EnsureHfToken()") == 1
+
+
+def test_the_table_source_is_checked_against_the_run_target_on_bridges_that_can() -> None:
+    check = _function("sam3CheckTableAgainstRunTarget")
+    assert 'typeof PLUGIN_API.checkDataForRunTarget !== "function"' in check
+    assert "PLUGIN_API.hostChecksTableInputs" in check
+    assert 'typeof PLUGIN_API.onRunTargetChange === "function"' in UI
+    assert "PLUGIN_API.onRunTargetChange(sam3CheckTableAgainstRunTarget)" in UI
