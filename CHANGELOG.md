@@ -17,10 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which token source the worker uses (`hf_token`: `connection`, `environment`, `legacy-file` or
   `none`), never the token itself.
 - The model download receives the token explicitly instead of reading `HF_TOKEN` when it runs.
-  That variable is process-wide while a job or request holds a Connection, and the warm-up loads
-  on a thread of its own. A worker's own `HF_TOKEN` is read once, when the plugin is imported.
+  The environment is shared by every job and request in a worker, and the warm-up loads on a
+  thread of its own. A worker's own `HF_TOKEN` is read once, when the plugin is imported.
 
 ### Changed
+- Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
+  directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
+  it from the `staging` index.
+- CI runs on pull requests into, and pushes to, `config-service-poc` as well as `main`.
 - Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
 - Resolve the plugin SDK from the explicit `staging` index declared in `pyproject.toml`; developers and CI
   need only `UV_INDEX_STAGING_USERNAME` / `UV_INDEX_STAGING_PASSWORD`.
@@ -38,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Connection", and so does a job's log.
 
 ### Fixed
+- The legacy token file is found again with an SDK that resolves its config root when a store
+  is built (`config_store.config_root()`; `CONFIG_ROOT` is now only an override, `None` by
+  default). A worker with no home directory reads no legacy token instead of failing the job.
 - The preview button no longer hangs for up to 20 minutes when the worker cannot answer
   `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build
   answers 404) or three failed polls in a row now stops the loop and says why in the log.

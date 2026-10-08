@@ -172,12 +172,10 @@ def test_model_status_says_where_the_token_comes_from(config_root: Path, monkeyp
 
 
 def test_a_credential_route_sees_the_bound_connection(config_root: Path) -> None:
-    """End to end through the SDK's request middleware (an SDK newer than the pinned one)."""
-    connections = pytest.importorskip("tlc_plugin_sdk.connections")
-    if not hasattr(connections, "credential_middleware"):
-        pytest.skip("this SDK binds no credential on routes")
+    """End to end through the SDK's request middleware."""
     from litestar import Litestar
     from litestar.testing import TestClient
+    from tlc_plugin_sdk import connections
 
     handlers = [h for h in routes.get_route_handlers() if "/model-status" in h.paths]
     app = Litestar(route_handlers=handlers, middleware=[connections.credential_middleware])

@@ -18,10 +18,11 @@ SAM 3's weights are gated on Hugging Face, so the model download needs a token. 
 Else there is none, and the gated download fails with Hugging Face's own 401.
 
 The token is handed to the download explicitly (``token=``), never read back from ``HF_TOKEN`` at
-download time: the SDK sets that variable process-wide while a job or request holds a Connection,
-so another person's call in the same worker would otherwise download with their token, and the
-warm-up loads the model on a thread that outlives the request that started it. The worker's own
-variable is therefore read once, when this module is imported with the plugin.
+download time: the environment is shared by every job and request in the worker, so a token placed
+there would reach another person's call, and the warm-up loads the model on a thread that outlives
+the request that started it. The SDK binds a Connection's value only in the job's or request's
+context, never in ``os.environ``. The worker's own variable is read once, when this module is
+imported with the plugin.
 """
 
 from __future__ import annotations
@@ -50,8 +51,7 @@ def _bound_token() -> str:
         return ""
     # A job: the SDK binds the run's granted value around run_job (SDK 0.5 secret leg).
     # A credential_routes request: bound by the SDK's request middleware, which reads the host's
-    # X-TLC-Bound-Credential header. That middleware is newer than the SDK this plugin pins; with
-    # the pinned SDK a route sees no Connection here and falls back to the legacy file below.
+    # X-TLC-Bound-Credential header.
     credential = current_credential()
     if getattr(credential, "provider", "") != SERVICE:
         return ""
@@ -61,15 +61,17 @@ def _bound_token() -> str:
 
 def legacy_token_path() -> Path:
     """Where the retired ``/set-hf-token`` route saved the token."""
-    from tlc_plugin_sdk.shared.config_store import CONFIG_ROOT
+    from tlc_plugin_sdk.shared.config_store import config_root
 
-    return CONFIG_ROOT / "sam3" / LEGACY_TOKEN_FILE
+    return config_root() / "sam3" / LEGACY_TOKEN_FILE
 
 
 def _legacy_token() -> str:
+    from tlc_plugin_sdk.shared.config_store import ConfigRootUnavailable
+
     try:
         data = json.loads(legacy_token_path().read_text())
-    except (OSError, ValueError):
+    except (OSError, ValueError, ConfigRootUnavailable):
         return ""
     token = data.get("hf_token", "") if isinstance(data, dict) else ""
     return token.strip() if isinstance(token, str) else ""

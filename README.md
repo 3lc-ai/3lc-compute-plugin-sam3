@@ -21,7 +21,7 @@ The heavy stack (`torch`, `sam3`, `umap-learn`) lives behind the **`[sam3]` extr
 `runtime.provision_extra` in `src/tlc_plugin_sam3/plugin.toml` and is installed **only** into the
 plugin's provisioned venv — never the host venv. The vendored BPE vocab
 (`bpe_simple_vocab_16e6.txt.gz`) ships inside the package and is bundled into the wheel. The base
-dependency is the SDK floor only.
+dependencies are the SDK and core floors only.
 
 ## Dev setup
 
@@ -42,9 +42,9 @@ The plugin contract and author guide live in
 
 ## Staged SDK and publishing
 
-SDK 0.5 is not on PyPI yet; `pyproject.toml` routes it to the private staging index. Set the
-index credentials in your shell before `uv sync --locked --group dev` (keep tokens out of
-source files); nothing else is needed:
+The staged `3lc` core and SDK 0.5 are not on PyPI yet; `pyproject.toml` routes both to the private
+staging index. Set the index credentials in your shell before `uv sync --locked --group dev`
+(keep tokens out of source files); nothing else is needed:
 
 ```bash
 export UV_INDEX_STAGING_USERNAME="<staging index username>"
