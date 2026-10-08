@@ -954,7 +954,11 @@ _sam3SeedFromHost();
     if (area) {
       area.innerHTML = _tlcAliasSettingsHtml("sam3", "", "");
       _tlcBindAliasToggle("sam3");
-      _tlcBindAliasAutoUpdate("sam3", "sam3-project-name", "sam3-folder");
+      // No copy offer: sam3 reads the folder where it is and never copies it, so an offer to copy
+      // it next to the table would promise something the run does not do. Moving data to a GPU
+      // node is the Hub's run dialog's job. (Newer SDKs make the offer opt-in; this keeps older
+      // ones from showing it.)
+      _tlcBindAliasAutoUpdate("sam3", "sam3-project-name", "sam3-folder", "", "", { copyOffer: false });
     }
   })();
 

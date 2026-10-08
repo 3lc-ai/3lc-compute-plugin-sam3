@@ -69,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads. When the Hub stages the data on a GPU node and rewrites `folder` to that copy, the rows are
   written from the copy but the project's alias still names the bucket, never the node's stage
   path. The page always sends `alias_folder` (the chosen folder unless the person edited it).
+- The URL alias card no longer offers to copy the folder next to the table. SAM3 never made that
+  copy (it sends no `alias_copy_*` fields), so the checked offer promised something the run did not
+  do. Moving data to a GPU node is the Hub's run dialog's job.
 
 ## [0.2.5] - 2026-09-11
 
