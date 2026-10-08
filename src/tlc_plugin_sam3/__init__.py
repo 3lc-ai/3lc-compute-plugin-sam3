@@ -183,6 +183,9 @@ def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None =
     table = tlc.Table.from_url(table_url)
     total = len(table)
     _log(ctx, f"Table has {total} images")
+    if total == 0:
+        # Before the model loads: an empty table would download it only to predict nothing.
+        ctx.fail(f"Table {table_url} has no rows")
 
     image_column = get_image_column(table)
     _log(ctx, f"Using image column: {image_column}")
@@ -435,7 +438,7 @@ def _run_create_table(ctx: JobContext, *, root_url: str | None = None) -> str:
         The URL of the created table, or ``""`` if cancelled before finalize.
 
     """
-    from tlc_plugin_sam3.inference import list_images_in_folder
+    from tlc_plugin_sam3.sources import SourceError, images_in_folder
 
     params = ctx.params
 
@@ -480,9 +483,10 @@ def _run_create_table(ctx: JobContext, *, root_url: str | None = None) -> str:
                 ctx.fail(f"No images found in table {source_table_url}")
         else:
             _log(ctx, f"Scanning images in: {folder}")
-            image_paths = list_images_in_folder(folder)
-            if not image_paths:
-                ctx.fail(f"No images found in {folder}")
+            try:
+                image_paths = images_in_folder(folder)
+            except SourceError as exc:
+                ctx.fail(str(exc))
 
         # Limit to max_images if specified
         max_images = int(params.get("max_images", 0) or 0)

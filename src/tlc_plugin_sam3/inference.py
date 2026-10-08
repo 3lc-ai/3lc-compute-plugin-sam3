@@ -484,19 +484,3 @@ def render_preview(
     buf = io.BytesIO()
     result.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-def list_images_in_folder(folder: str, max_count: int = 10000) -> list[str]:
-    """List image files in a folder recursively (local, cloud, or aliased).
-
-    Args:
-        folder: Path or URL to folder.
-        max_count: Maximum number of images to return.
-
-    Returns:
-        Sorted list of image paths/URLs.
-
-    """
-    from tlc_plugin_sdk.shared.images import list_image_urls
-
-    return list_image_urls(folder, max_count)

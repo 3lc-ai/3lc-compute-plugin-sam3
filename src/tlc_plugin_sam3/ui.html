@@ -694,7 +694,7 @@ function sam3RunPreview(sameImage) {
     if (!body.table_url) { sam3Log("Enter a table URL"); return; }
   }
   var btn = document.getElementById("sam3-preview-btn"), sameBtn = document.getElementById("sam3-preview-same-btn");
-  btn.disabled = true; sameBtn.disabled = true; btn.textContent = "Loading SAM3...";
+  btn.disabled = true; sameBtn.disabled = true; btn.textContent = "Checking images...";
   sam3AutoSave();
 
   function restoreButtons() {
@@ -747,7 +747,28 @@ function sam3RunPreview(sameImage) {
       setTimeout(pollModel, 5000);
     });
   }
-  _sam3EnsureHfToken().then(pollModel);
+  // Look for the images FIRST, on the worker that will read them (/check-source is a node route,
+  // like /preview): a folder that is not there, or holds no images, is reported in seconds instead
+  // of after the model download. It also hands back the image to preview, so the folder is listed
+  // once. A worker without the route (an older SAM3 build on a node answers 404) skips the check.
+  function checkSource() {
+    if (body.image_path) return Promise.resolve(true);  // "Recalculate Same": already found there
+    var check = body.table_url ? { table_url: body.table_url } : { folder: body.folder };
+    return _sam3Post("/api/plugins/sam3/check-source", check, { timeout: 120000 }).then(function(data) {
+      if (!body.image_path && data && data.image_path) body.image_path = data.image_path;
+      return true;
+    }).catch(function(e) {
+      if (e && e.status === 404) return true;
+      restoreButtons();
+      sam3Log("Error: " + (e && e.message ? e.message : e));
+      return false;
+    });
+  }
+  checkSource().then(function(ok) {
+    if (!ok) return;
+    btn.textContent = "Loading SAM3...";
+    _sam3EnsureHfToken().then(pollModel);
+  });
 }
 
 // ── Create Table ─────────────────────────────────────────────

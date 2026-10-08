@@ -48,6 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The preview button no longer hangs for up to 20 minutes when the worker cannot answer
   `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build
   answers 404) or three failed polls in a row now stops the loop and says why in the log.
+- A preview looks for its images before it loads the model. The new `POST /check-source` node route
+  runs on the worker that will read the images and answers in seconds. Before, a preview on a GPU
+  node downloaded the model (minutes on a fresh node) and only then reported "No images found".
+  A worker without the route (an older build on a node) skips the check.
+- A folder that is not on the worker reading it is reported as "Folder not found on <machine>",
+  apart from an empty folder ("No images found in … on <machine>"). An alias the worker does not
+  know, or a folder it cannot list, names the machine too. The create step checks the folder
+  before it starts a table or imports the model, and predict fails on a table with no rows before
+  it creates a run.
 
 ## [0.2.5] - 2026-09-11
 
