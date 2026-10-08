@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release only, a token file saved by an earlier version is still read when no Connection is chosen
   and the worker has no `HF_TOKEN`. The page then says "using the legacy token file — choose a
   Connection", and so does a job's log.
+- The create step no longer applies `_alias_overrides` itself; the SDK worker applies them around
+  every job.
 
 ### Fixed
 - The legacy token file is found again with an SDK that resolves its config root when a store
@@ -57,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   know, or a folder it cannot list, names the machine too. The create step checks the folder
   before it starts a table or imports the model, and predict fails on a table with no rows before
   it creates a run.
+- A folder source's URL alias is registered before the table's rows are written, not after.
+  Registered afterwards, the first table a worker wrote kept absolute image paths.
+- The persisted alias points at the durable folder (`alias_folder`), not at the folder this run
+  reads. When the Hub stages the data on a GPU node and rewrites `folder` to that copy, the rows are
+  written from the copy but the project's alias still names the bucket, never the node's stage
+  path. The page always sends `alias_folder` (the chosen folder unless the person edited it).
 
 ## [0.2.5] - 2026-09-11
 

@@ -840,10 +840,13 @@ function sam3CreateAndPredict() {
     var folder = document.getElementById("sam3-folder").value.trim();
     if (!folder) { sam3Log("Enter a folder path in Setup"); return; }
     body.folder = folder;
+    // Only these alias fields: sam3 never copies the data itself, so the card's alias_copy_* are not sent.
+    // alias_folder is always filled in: it is the durable location the persisted alias points at,
+    // while the Hub may rewrite `folder` to a copy on a GPU node for this run.
     var alias = _tlcGetAliasValues("sam3");
     body.alias_enabled = alias.alias_enabled;
     body.alias_token = alias.alias_token;
-    body.alias_folder = alias.alias_folder;
+    body.alias_folder = alias.alias_folder || folder;
   }
 
   sam3AutoSave();
