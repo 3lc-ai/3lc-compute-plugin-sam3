@@ -15,7 +15,6 @@ inference — all blocking work.
 from __future__ import annotations
 
 import logging
-import os
 import random
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
@@ -33,30 +32,12 @@ logger = logging.getLogger(__name__)
 def get_route_handlers() -> list[BaseRouteHandler]:
     """Build SAM3's custom route handlers (fresh per call, for per-app registration)."""
 
-    # ── HuggingFace token ──
-
-    @post("/set-hf-token", status_code=200, sync_to_thread=True)
-    def set_hf_token(data: dict[str, Any]) -> dict[str, Any]:
-        token = str(data.get("token", "")).strip()
-        if not token:
-            return {"error": "token is required"}
-        os.environ["HF_TOKEN"] = token
-        # Persist: env alone dies with the worker process (and never reaches a
-        # remote GPU worker); the config dir survives restarts and is seeded to nodes.
-        from tlc_plugin_sam3.config_store import persist_hf_token
-
-        try:
-            persist_hf_token(token)
-        except Exception as exc:
-            return {"ok": True, "warning": f"token active but not persisted: {exc}"}
-        return {"ok": True}
-
-    @get("/hf-token-status", sync_to_thread=True)
-    def hf_token_status() -> dict[str, Any]:
-        from tlc_plugin_sam3.config_store import ensure_hf_token_env
-
-        ensure_hf_token_env()
-        return {"has_token": bool(os.environ.get("HF_TOKEN", ""))}
+    # ── Hugging Face token ──
+    #
+    # The token is a SECRET Connection the person chooses in the Hub; the manifest lists the three
+    # routes below under ``credential_routes``, so the host hands the Connection's value to them (and
+    # to jobs), and ``hf_token.resolve`` reads it in the request's context. /model-status needs no
+    # token itself: it is listed so it can say which source a preview would use.
 
     @post("/model-warmup", status_code=200, sync_to_thread=True)
     def model_warmup(data: dict[str, Any]) -> dict[str, Any]:
@@ -65,18 +46,23 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         The fragment polls ``/model-status`` afterwards — short requests that no
         browser timeout or proxy idle window can kill, unlike one long preview call.
         """
-        from tlc_plugin_sam3.config_store import ensure_hf_token_env
+        from tlc_plugin_sam3.hf_token import resolve
         from tlc_plugin_sam3.inference import warmup_model
 
-        ensure_hf_token_env()
+        # Resolved here, in the request's context: the load runs on its own thread.
+        token, source = resolve()
         # The first call of a user action retries a previous failure; the polls that follow only look.
-        return warmup_model(str(data.get("device", "cuda") or "cuda"), retry=bool(data.get("retry", True)))
+        state = warmup_model(
+            str(data.get("device", "cuda") or "cuda"), retry=bool(data.get("retry", True)), token=token
+        )
+        return {**state, "hf_token": source}
 
     @get("/model-status", sync_to_thread=True)
     def model_status_route() -> dict[str, Any]:
+        from tlc_plugin_sam3.hf_token import source
         from tlc_plugin_sam3.inference import model_status
 
-        return model_status()
+        return {**model_status(), "hf_token": source()}
 
     # ── Preview (CPU-bound SAM3 inference — sync_to_thread keeps the event loop free) ──
 
@@ -84,9 +70,6 @@ def get_route_handlers() -> list[BaseRouteHandler]:
     def preview(data: dict[str, Any]) -> Response[dict[str, Any]]:
         import traceback
 
-        from tlc_plugin_sam3.config_store import ensure_hf_token_env
-
-        ensure_hf_token_env()  # model download needs HF_TOKEN; env dies with the process
         try:
             result = _run_preview(data)
         except Exception as exc:
@@ -108,14 +91,30 @@ def get_route_handlers() -> list[BaseRouteHandler]:
 
     @post("/list-images", status_code=200, sync_to_thread=True)
     def list_images(data: dict[str, Any]) -> dict[str, Any]:
-        from tlc_plugin_sam3.inference import list_images_in_folder
+        from tlc_plugin_sam3.sources import SourceError, images_in_folder
 
-        # normalize_url expands a user-typed ``~`` (protocol URLs pass through untouched).
-        folder = normalize_url(str(data.get("folder", "")).strip())
-        if not folder:
+        if not str(data.get("folder", "") or "").strip():
             return {"error": "folder is required"}
-        images = list_images_in_folder(folder)
+        try:
+            images = images_in_folder(str(data["folder"]))
+        except SourceError as exc:
+            return {"error": str(exc)}
         return {"count": len(images), "sample": images[:20]}
+
+    # ── Source check (before the model warm-up) ──
+    #
+    # A node route, like /preview: it looks for the images on the worker the preview will read them
+    # on. The page asks it first, so a folder that is missing there, or holds no images, is reported
+    # in seconds instead of after a multi-GB model download.
+
+    @post("/check-source", status_code=200, sync_to_thread=True)
+    def check_source_route(data: dict[str, Any]) -> Response[dict[str, Any]]:
+        from tlc_plugin_sam3.sources import check_source
+
+        result = check_source(data)
+        if "error" in result:
+            return Response({"detail": str(result["error"])}, status_code=400)
+        return Response(result, status_code=200)
 
     # ── Read labels from table ──
 
@@ -186,12 +185,11 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         return {"deleted": config_store().delete_config(config_id)}
 
     return [
-        set_hf_token,
-        hf_token_status,
         model_warmup,
         model_status_route,
         preview,
         list_images,
+        check_source_route,
         read_labels,
         list_configs,
         save_config,
@@ -207,11 +205,7 @@ def _run_preview(data: dict[str, Any]) -> dict[str, Any]:
     ``folder``). Returns image_path, preview (base64 PNG), num_detections, and the
     detections list.
     """
-    from tlc_plugin_sam3.inference import (
-        list_images_in_folder,
-        predict_single_image,
-        render_preview,
-    )
+    from tlc_plugin_sam3.sources import SourceError, images_in_folder
 
     folder = normalize_url(data.get("folder", "").strip())
     table_url = data.get("table_url", "").strip()
@@ -240,12 +234,16 @@ def _run_preview(data: dict[str, Any]) -> dict[str, Any]:
             idx = random.randint(0, len(table) - 1)
             image_path = resolve_image_url(str(table.table_rows[idx][image_column]), table.url).to_str()
         elif folder:
-            images = list_images_in_folder(folder)
-            if not images:
-                return {"error": f"No images found in {folder}"}
+            try:
+                images = images_in_folder(folder)
+            except SourceError as exc:
+                return {"error": str(exc)}
             image_path = random.choice(images)
         else:
             return {"error": "Either folder or table_url is required"}
+
+    # The model is imported (and on first use downloaded) only once an image has been found.
+    from tlc_plugin_sam3.inference import predict_single_image, render_preview
 
     # load_image handles local paths (PIL directly), cloud/alias paths
     # (via tlc.Url), and paths relative to the table.

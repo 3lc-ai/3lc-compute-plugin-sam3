@@ -67,15 +67,11 @@
   </div>
 </div>
 
-<!-- ── HuggingFace Token Banner ───────────────────────────── -->
+<!-- ── Hugging Face token: a Connection the Hub keeps ────────── -->
 <div class="plugin-info-banner" id="sam3-hf-card">
   <span style="display:inline-flex"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="14" height="7" rx="2"/><circle cx="10" cy="6" r="4"/><path d="M10 10v3"/></svg></span>
-  <span id="sam3-hf-label">HuggingFace token required</span>
-  <span id="sam3-hf-input-row" style="display:flex;gap:6px;align-items:center;flex:1">
-    <input type="password" id="sam3-hf-token" class="form-control" placeholder="hf_..." style="flex:1;max-width:220px">
-    <button class="btn btn-ghost btn-sm" onclick="sam3SetHfToken()">Save</button>
-  </span>
-  <button class="btn btn-ghost btn-sm" id="sam3-hf-change-btn" style="display:none" onclick="document.getElementById('sam3-hf-input-row').style.display='flex';this.style.display='none'">Change</button>
+  <span id="sam3-hf-label" style="flex:1">Hugging Face token…</span>
+  <button class="btn btn-ghost btn-sm" id="sam3-hf-choose-btn" style="display:none" onclick="sam3ChooseHfToken()">Choose…</button>
   <span id="sam3-hf-status" class="text-sm"></span>
 </div>
 
@@ -127,11 +123,12 @@
                  because a host that does not provide the picker still gets a usable field. -->
             <div style="display:flex;gap:6px">
               <input type="text" id="sam3-table-url" class="form-control plugin-mono" style="flex:1"
-                     placeholder="Paste URL or click Browse...">
+                     placeholder="Paste URL or click Browse..." oninput="sam3CheckTableAgainstRunTarget()">
               <button type="button" class="btn btn-secondary btn-sm"
                       onclick="if(typeof openTablePicker==='function')openTablePicker('sam3-table-url')">Browse</button>
             </div>
             <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="sam3ReadLabels()">Read Labels from Table</button>
+            <div id="sam3-run-target-data-note" class="form-help" style="display:none"></div>
           </div>
         </div>
         <div class="form-help">Point to an image folder or existing 3LC table. SAM3 will process every image in the source.</div>
@@ -268,9 +265,6 @@
         <div id="sam3-create-status" class="text-sm" style="margin-top:6px"></div>
       </div>
     </div>
-    <!-- Hidden input for backward compat with queue polling code -->
-    <input type="hidden" id="sam3-predict-table">
-    <div id="sam3-predict-labels-info" style="display:none"></div>
 
     <!-- Progress -->
     <div class="card mb-16">
@@ -405,33 +399,92 @@ function sam3AddLabel() {
 }
 function sam3RemoveLabel(idx) { _sam3Labels.splice(idx, 1); sam3RenderLabels(); }
 
-// ── HuggingFace Token ────────────────────────────────────────
-function sam3SetHfToken() {
-  var token = document.getElementById("sam3-hf-token").value.trim(); if (!token) return;
-  _sam3Post("/api/plugins/sam3/set-hf-token", { token: token }).then(function(data) {
-    if (data.error) { document.getElementById("sam3-hf-status").textContent = "Error: " + data.error; return; }
-    document.getElementById("sam3-hf-label").textContent = "HuggingFace token is set";
-    document.getElementById("sam3-hf-input-row").style.display = "none";
-    document.getElementById("sam3-hf-change-btn").style.display = "";
-    sam3Log("HuggingFace token set");
-  }).catch(function(e) { document.getElementById("sam3-hf-status").textContent = "Error: " + e; });
+// ── Hugging Face token ───────────────────────────────────────
+// SAM 3's weights are gated, so the download needs a token. It is a SECRET Connection the Hub
+// keeps: PLUGIN_API.chooseCredential lets the person pick (or add) one, and the Hub sends the
+// choice with this plugin's runs and its preview / warm-up / status calls (the manifest's
+// credential_routes). This page never sees the value. /model-status says which source the worker
+// would use ("connection", "environment", "legacy-file" or "none").
+var _SAM3_HF_SERVICE = "huggingface";
+var _sam3HfSource = "", _sam3ModelReady = false;
+function _sam3HfChooser() { return typeof PLUGIN_API.chooseCredential === "function"; }
+function _sam3HfChosen() {
+  return typeof PLUGIN_API.credential === "function" ? PLUGIN_API.credential(_SAM3_HF_SERVICE) : null;
 }
-function sam3CheckHfToken() {
-  _sam3Fetch("/api/plugins/sam3/hf-token-status").then(function(r) { return r.json(); }).then(function(data) {
-    if (data.has_token) {
-      document.getElementById("sam3-hf-label").textContent = "HuggingFace token is set";
-      document.getElementById("sam3-hf-input-row").style.display = "none";
-      document.getElementById("sam3-hf-change-btn").style.display = "";
-    }
-  }).catch(function() {});
+function sam3RenderHfToken(source) {
+  _sam3HfSource = source || "";
+  var label = document.getElementById("sam3-hf-label"), btn = document.getElementById("sam3-hf-choose-btn");
+  var chosen = _sam3HfChosen(), text;
+  if (source === "connection") text = "Hugging Face token: your Connection";
+  else if (chosen) text = "Hugging Face token: a Connection is chosen, but this compute service does not pass it on yet"
+    + (source === "legacy-file" ? " — using the legacy token file meanwhile" : "");
+  else if (source === "legacy-file") text = "Using the legacy token file — choose a Connection";
+  else if (source === "environment") text = "Hugging Face token: from the worker's environment — choose a Connection to use your own";
+  else text = "Hugging Face token required — choose a Connection";
+  if (!_sam3HfChooser()) text += " (this Hub cannot choose one; update it)";
+  label.textContent = text;
+  btn.style.display = _sam3HfChooser() ? "" : "none";
+  btn.textContent = chosen ? "Change…" : "Choose…";
 }
-sam3CheckHfToken();
+function sam3RefreshHfToken() {
+  document.getElementById("sam3-hf-status").textContent = "";
+  return _sam3Fetch("/api/plugins/sam3/model-status").then(function(r) { return r.json(); }).then(function(data) {
+    _sam3ModelReady = !!(data && data.state === "ready");
+    sam3RenderHfToken(data && data.hf_token);
+  }).catch(function(e) {
+    sam3RenderHfToken("");
+    document.getElementById("sam3-hf-status").textContent = "Error: " + (e && e.message ? e.message : e);
+  });
+}
+function sam3ChooseHfToken() {
+  if (!_sam3HfChooser()) return Promise.resolve(null);
+  return PLUGIN_API.chooseCredential(_SAM3_HF_SERVICE).then(function(id) {
+    if (id) sam3Log("Hugging Face token: Connection chosen");
+    return sam3RefreshHfToken().then(function() { return id; });
+  }).catch(function(e) {
+    document.getElementById("sam3-hf-status").textContent = "Error: " + (e && e.message ? e.message : e);
+    return null;
+  });
+}
+// Before the first download: with no token from anywhere, ask (cancelling still tries).
+function _sam3EnsureHfToken() {
+  if (_sam3ModelReady || _sam3HfSource !== "none" || _sam3HfChosen() || !_sam3HfChooser()) return Promise.resolve();
+  return sam3ChooseHfToken();
+}
+sam3RefreshHfToken();
 
 // ── Source toggle ────────────────────────────────────────────
 function sam3SourceChanged() {
   var type = document.getElementById("sam3-source-type").value;
   document.getElementById("sam3-folder-group").style.display = type === "folder" ? "" : "none";
   document.getElementById("sam3-table-group").style.display = type === "table" ? "" : "none";
+  document.getElementById("sam3-alias-area").style.display = type === "folder" ? "" : "none";
+  sam3CheckTableAgainstRunTarget();
+}
+
+// Selection-time data check against the Hub's "Run on:" target: warn the moment a table is picked
+// (or the target flips), not when the run is submitted. Optional bridge API — feature-detected and
+// silent on Hubs that predate it. A Hub that annotates every table input itself says so with
+// hostChecksTableInputs; the note is then left to it, so it is not shown twice.
+function sam3CheckTableAgainstRunTarget() {
+  var note = document.getElementById("sam3-run-target-data-note");
+  if (!note || !window.PLUGIN_API || typeof PLUGIN_API.checkDataForRunTarget !== "function") return;
+  if (PLUGIN_API.hostChecksTableInputs) { note.style.display = "none"; return; }
+  var url = document.getElementById("sam3-table-url").value.trim();
+  var isTable = document.getElementById("sam3-source-type").value === "table";
+  var target = (typeof PLUGIN_API.getRunTarget === "function") ? PLUGIN_API.getRunTarget() : { target: "local" };
+  if (!isTable || !url || !target || target.target !== "node") { note.style.display = "none"; return; }
+  PLUGIN_API.checkDataForRunTarget(url).then(function(verdict) {
+    if (document.getElementById("sam3-table-url").value.trim() !== url) return;  // stale
+    var notes = (verdict && verdict.notes) || [];
+    if (verdict && verdict.ok && !notes.length) { note.style.display = "none"; return; }
+    note.textContent = (verdict && verdict.ok ? "⚠️ " : "❌ This will NOT run on the GPU node: ") + notes.join(" ");
+    note.style.color = verdict && verdict.ok ? "var(--warning, #d97706)" : "var(--error, #dc2626)";
+    note.style.display = "";
+  }).catch(function() { note.style.display = "none"; });
+}
+if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
+  PLUGIN_API.onRunTargetChange(sam3CheckTableAgainstRunTarget);
 }
 function sam3ReadLabels() {
   var url = document.getElementById("sam3-table-url").value.trim(); if (!url) return;
@@ -443,7 +496,6 @@ function sam3ReadLabels() {
       sam3RenderLabels();
       if (data.modality) document.getElementById("sam3-modality").value = data.modality;
       sam3Log("Read " + data.labels.length + " labels: " + data.labels.join(", "));
-      document.getElementById("sam3-predict-table").value = url;
     } else { sam3Log("No labels found in table schema"); }
   }).catch(function(e) { sam3Log("Error: " + e); });
 }
@@ -541,6 +593,7 @@ function sam3LoadConfig(configId) {
     document.getElementById("sam3-source-type").value = c.source_type || "folder"; sam3SourceChanged();
     document.getElementById("sam3-folder").value = c.folder || "";
     document.getElementById("sam3-table-url").value = c.table_url || "";
+    sam3CheckTableAgainstRunTarget();
     _sam3Labels = (c.labels || []).map(function(l) { return { name: l.name, color: l.color }; });
     _sam3ColorIndex = _sam3Labels.length;
     sam3RenderLabels();
@@ -666,7 +719,7 @@ function sam3RunPreview(sameImage) {
     if (!body.table_url) { sam3Log("Enter a table URL"); return; }
   }
   var btn = document.getElementById("sam3-preview-btn"), sameBtn = document.getElementById("sam3-preview-same-btn");
-  btn.disabled = true; sameBtn.disabled = true; btn.textContent = "Loading SAM3...";
+  btn.disabled = true; sameBtn.disabled = true; btn.textContent = "Checking images...";
   sam3AutoSave();
 
   function restoreButtons() {
@@ -693,54 +746,55 @@ function sam3RunPreview(sameImage) {
 
   // Warm the model FIRST via short polls — the initial multi-GB download outlives
   // any single request (browser timeout locally, proxy idle window on a node).
-  var polls = 0;
+  // A reply without a warm-up state is not "still warming": it is a worker that has no
+  // /model-warmup route (an older plugin build on a remote node answers 404), and a run of
+  // failed polls is a worker that is gone. Both stop the loop with a reason in the log.
+  var polls = 0, failures = 0;
   function pollModel() {
     polls += 1;
     if (polls > 240) { restoreButtons(); sam3Log("Model warmup timed out (20 min)."); return; }
     _sam3Post("/api/plugins/sam3/model-warmup", { device: body.device, retry: polls === 1 }, { timeout: 20000 }).then(function(state) {
+      if (!state || typeof state.state !== "string") {
+        restoreButtons();
+        sam3Log("Model warmup: the worker did not answer /model-warmup (" + (state && (state.detail || state.error) || "unexpected reply") + "). " +
+                "On a remote node this usually means the node runs an older SAM3 plugin build than this one.");
+        return;
+      }
+      failures = 0;
       if (state.state === "ready") { runPreview(); return; }
       if (state.state === "failed") { restoreButtons(); sam3Log("Model load failed: " + (state.detail || "")); return; }
-      btn.textContent = "Downloading model" + ".".repeat(1 + (polls % 3));
-      if (polls === 1) sam3Log("First use on this machine: downloading the SAM3 model (a few GB, one time)...");
+      btn.textContent = "Loading model" + ".".repeat(1 + (polls % 3));
+      // The worker says whether it is downloading the weights or loading them from its cache.
+      if (polls === 1) sam3Log("SAM3 model: " + (state.detail || "loading") + "...");
       setTimeout(pollModel, 5000);
-    }).catch(function() { setTimeout(pollModel, 5000); });
+    }).catch(function(e) {
+      failures += 1;
+      if (failures >= 3) { restoreButtons(); sam3Log("Model warmup: no answer from the worker after " + failures + " attempts (" + (e && e.message ? e.message : e) + ")."); return; }
+      setTimeout(pollModel, 5000);
+    });
   }
-  pollModel();
-}
-
-// ── Create Table ─────────────────────────────────────────────
-function sam3CreateTable() {
-  if (_sam3Labels.length === 0) { sam3Log("Add at least one label first"); return; }
-  var sourceType = document.getElementById("sam3-source-type").value;
-  var projectName = document.getElementById("sam3-project-name").value.trim();
-  var datasetName = document.getElementById("sam3-dataset-name").value.trim() || "train";
-  var tableName = document.getElementById("sam3-table-name").value.trim() || "initial";
-  if (!projectName) { sam3Log("Enter a project name"); return; }
-
-  var body = {
-    mode: "create_table",
-    labels: _sam3LabelNames(), label_colors: _sam3LabelColors(),
-    modality: document.getElementById("sam3-modality").value, project_name: projectName,
-    dataset_name: datasetName, table_name: tableName,
-  };
-
-  if (sourceType === "table") {
-    var tableUrl = document.getElementById("sam3-table-url").value.trim();
-    if (!tableUrl) { sam3Log("Enter a table URL"); return; }
-    body.source_table_url = tableUrl;
-  } else {
-    var folder = document.getElementById("sam3-folder").value.trim();
-    if (!folder) { sam3Log("Enter a folder path in Setup"); return; }
-    body.folder = folder;
-    var alias = _tlcGetAliasValues("sam3");
-    body.alias_enabled = alias.alias_enabled;
-    body.alias_token = alias.alias_token;
-    body.alias_folder = alias.alias_folder;
+  // Look for the images FIRST, on the worker that will read them (/check-source is a node route,
+  // like /preview): a folder that is not there, or holds no images, is reported in seconds instead
+  // of after the model download. It also hands back the image to preview, so the folder is listed
+  // once. A worker without the route (an older SAM3 build on a node answers 404) skips the check.
+  function checkSource() {
+    if (body.image_path) return Promise.resolve(true);  // "Recalculate Same": already found there
+    var check = body.table_url ? { table_url: body.table_url } : { folder: body.folder };
+    return _sam3Post("/api/plugins/sam3/check-source", check, { timeout: 120000 }).then(function(data) {
+      if (!body.image_path && data && data.image_path) body.image_path = data.image_path;
+      return true;
+    }).catch(function(e) {
+      if (e && e.status === 404) return true;
+      restoreButtons();
+      sam3Log("Error: " + (e && e.message ? e.message : e));
+      return false;
+    });
   }
-
-  sam3AutoSave();
-  sam3Log("Creating table...");
-  _sam3SubmitJob(body, "Table creation job submitted", "Job submitted — see Progress");
+  checkSource().then(function(ok) {
+    if (!ok) return;
+    btn.textContent = "Loading SAM3...";
+    _sam3EnsureHfToken().then(pollModel);
+  });
 }
 
 // ── Create & Predict (combined) ─────────────────────────────
@@ -777,44 +831,21 @@ function sam3CreateAndPredict() {
     var folder = document.getElementById("sam3-folder").value.trim();
     if (!folder) { sam3Log("Enter a folder path in Setup"); return; }
     body.folder = folder;
+    // Only these alias fields: sam3 never copies the data itself, so the card's alias_copy_* are not sent.
+    // alias_folder is always filled in: it is the durable location the persisted alias points at,
+    // while the Hub may rewrite `folder` to a copy on a GPU node for this run.
+    var aliasError = _tlcAliasLocationError("sam3");
+    if (aliasError) { sam3Log(aliasError); return; }
     var alias = _tlcGetAliasValues("sam3");
     body.alias_enabled = alias.alias_enabled;
     body.alias_token = alias.alias_token;
-    body.alias_folder = alias.alias_folder;
+    body.alias_folder = alias.alias_folder || folder;
   }
 
   sam3AutoSave();
   sam3Log("Creating table & queuing prediction...");
   _sam3SubmitJob(body, "Job submitted — table will be created, then prediction runs automatically",
     "Creating table → prediction will start automatically");
-}
-
-// ── Predict ──────────────────────────────────────────────────
-function sam3ReadPredictLabels() {
-  var tableUrl = document.getElementById("sam3-predict-table").value.trim();
-  var infoEl = document.getElementById("sam3-predict-labels-info");
-  if (!tableUrl) { infoEl.textContent = ""; return; }
-  infoEl.textContent = "Reading table schema...";
-  _sam3Post("/api/plugins/sam3/read-labels", { table_url: tableUrl }).then(function(data) {
-    if (data.error) { infoEl.textContent = "Error: " + data.error; return; }
-    if (data.labels && data.labels.length > 0) {
-      infoEl.textContent = "Labels: " + data.labels.join(", ") + " | " + data.modality + " | " + data.table_length + " images";
-    } else { infoEl.textContent = "No labels found"; }
-  }).catch(function() { infoEl.textContent = "Could not read table"; });
-}
-function sam3RunPredict() {
-  var tableUrl = document.getElementById("sam3-predict-table").value.trim();
-  if (!tableUrl) { sam3Log("Enter a table URL"); return; }
-  sam3AutoSave();
-  sam3Log("Submitting prediction job...");
-  _sam3SubmitJob({
-    mode: "predict",
-    table_url: tableUrl, project_name: document.getElementById("sam3-project-name").value.trim(),
-    confidence: parseFloat(document.getElementById("sam3-confidence").value),
-    embedding_dim: parseInt(document.getElementById("sam3-embed-dim").value),
-    device: document.getElementById("sam3-device").value,
-    config_id: _sam3CurrentConfigId || "",
-  }, "Prediction job submitted", "Prediction job submitted — see Progress");
 }
 
 // ── Jobs: the generic job channel via PluginJobs, plus the plugin's own events ──
@@ -955,7 +986,11 @@ _sam3SeedFromHost();
     if (area) {
       area.innerHTML = _tlcAliasSettingsHtml("sam3", "", "");
       _tlcBindAliasToggle("sam3");
-      _tlcBindAliasAutoUpdate("sam3", "sam3-project-name", "sam3-folder");
+      // No copy offer: sam3 reads the folder where it is and never copies it, so an offer to copy
+      // it next to the table would promise something the run does not do. Moving data to a GPU
+      // node is the Hub's run dialog's job. (Newer SDKs make the offer opt-in; this keeps older
+      // ones from showing it.)
+      _tlcBindAliasAutoUpdate("sam3", "sam3-project-name", "sam3-folder", "", "", { copyOffer: false });
     }
   })();
 
@@ -965,7 +1000,7 @@ _sam3SeedFromHost();
     sam3LoadConfigs();
     document.getElementById("sam3-source-type").value = "table"; sam3SourceChanged();
     document.getElementById("sam3-table-url").value = tableParam;
-    document.getElementById("sam3-predict-table").value = tableParam;
+    sam3CheckTableAgainstRunTarget();
     setTimeout(function() { sam3ReadLabels(); }, 500);
   } else {
     var lastId = localStorage.getItem(_SAM3_STORAGE_KEY);
