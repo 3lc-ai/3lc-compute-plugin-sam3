@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### Data movement
+
+- The folder alias card is hidden for table inputs, whose aliases already belong to their source project.
+
+- The manifest declares the data SAM3 reads: `[runtime] data_inputs = ["folder", "source_table_url",
+  "table_url"]`. A Hub that reads it plans that data for a run (stream it, copy it to the GPU node,
+  or use a path already on the node) and refuses a folder that only exists on the person's own
+  computer, also for the node routes `/preview` and `/check-source`. Older hosts ignore the key.
+- A table source is checked against the Hub's "Run on:" target when it is picked and when the
+  target changes (`PLUGIN_API.checkDataForRunTarget` / `onRunTargetChange`). A table a GPU node
+  cannot read is flagged under the field before the run is submitted. A Hub that annotates table
+  inputs itself (`hostChecksTableInputs`), or one without the API, shows no second note.
+- The create step no longer applies `_alias_overrides` itself; the SDK worker applies them around
+  every job.
+- A preview looks for its images before it loads the model. The new `POST /check-source` node route
+  runs on the worker that will read the images and answers in seconds. Before, a preview on a GPU
+  node downloaded the model (minutes on a fresh node) and only then reported "No images found".
+  A worker without the route (an older build on a node) skips the check.
+- A folder that is not on the worker reading it is reported as "Folder not found on <machine>",
+  apart from an empty folder ("No images found in … on <machine>"). An alias the worker does not
+  know, or a folder it cannot list, names the machine too. The create step checks the folder
+  before it starts a table or imports the model, and predict fails on a table with no rows before
+  it creates a run.
+- A folder source's URL alias is registered before the table's rows are written, not after.
+  Registered afterwards, the first table a worker wrote kept absolute image paths.
+- The persisted alias points at the durable folder (`alias_folder`), not at the folder this run
+  reads. When the Hub stages the data on a GPU node and rewrites `folder` to that copy, the rows are
+  written from the copy but the project's alias still names the bucket, never the node's stage
+  path. The page always sends `alias_folder` (the chosen folder unless the person edited it).
+- The URL alias card no longer offers to copy the folder next to the table. SAM3 never made that
+  copy (it sends no `alias_copy_*` fields), so the checked offer promised something the run did not
+  do. Moving data to a GPU node is the Hub's run dialog's job.
+- The warm-up says whether it downloads the weights or loads them from the machine's Hugging Face
+  cache, and the page logs that. It used to announce "downloading the SAM3 model" for every cold
+  worker, so a worker restart on a warm machine looked like a second download.
+
+
 ### Added
 - The Hugging Face token is a Connection. The page's token box is replaced by a **Choose…** button
   that opens the Hub's dialog (`PLUGIN_API.chooseCredential("huggingface")`). There the person picks
@@ -16,11 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Connection's value to jobs and to those routes. `/model-status` (and `/model-warmup`) report
   which token source the worker uses (`hf_token`: `connection`, `environment`, `legacy-file` or
   `none`), never the token itself.
+
 - The model download receives the token explicitly instead of reading `HF_TOKEN` when it runs.
   The environment is shared by every job and request in a worker, and the warm-up loads on a
   thread of its own. A worker's own `HF_TOKEN` is read once, when the plugin is imported.
 
-### Changed
+#### Other changes
 - Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
   directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
   it from the `staging` index.
@@ -48,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The preview button no longer hangs for up to 20 minutes when the worker cannot answer
   `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build
   answers 404) or three failed polls in a row now stops the loop and says why in the log.
+
 
 ## [0.2.5] - 2026-09-11
 

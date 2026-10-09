@@ -183,6 +183,9 @@ def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None =
     table = tlc.Table.from_url(table_url)
     total = len(table)
     _log(ctx, f"Table has {total} images")
+    if total == 0:
+        # Before the model loads: an empty table would download it only to predict nothing.
+        ctx.fail(f"Table {table_url} has no rows")
 
     image_column = get_image_column(table)
     _log(ctx, f"Using image column: {image_column}")
@@ -435,19 +438,9 @@ def _run_create_table(ctx: JobContext, *, root_url: str | None = None) -> str:
         The URL of the created table, or ``""`` if cancelled before finalize.
 
     """
-    from tlc_plugin_sam3.inference import list_images_in_folder
+    from tlc_plugin_sam3.sources import SourceError, images_in_folder
 
     params = ctx.params
-
-    # Apply alias overrides if requested (so image paths use the right token)
-    alias_originals: list[dict[str, str]] = []
-    alias_ov = params.get("_alias_overrides", None)
-    if isinstance(alias_ov, dict) and alias_ov.get("enabled") and alias_ov.get("overrides"):
-        from tlc_plugin_sdk.shared.aliases import apply_alias_overrides
-
-        alias_originals = apply_alias_overrides(alias_ov["overrides"])
-        if alias_originals:
-            _log(ctx, f"Applied {len(alias_originals)} alias override(s)")
 
     # normalize_url expands a user-typed ``~`` (protocol URLs pass through untouched) —
     # saved configs may carry a tilde path from before the folder picker existed.
@@ -463,122 +456,145 @@ def _run_create_table(ctx: JobContext, *, root_url: str | None = None) -> str:
 
     import tlc
 
-    try:
-        # Resolve image paths from either an existing table or a folder
-        if source_table_url:
-            from tlc_plugin_sdk.shared.images import get_image_column, get_image_paths
-            from tlc_plugin_sdk.shared.url_utils import normalize_url
+    # Resolve image paths from either an existing table or a folder
+    if source_table_url:
+        from tlc_plugin_sdk.shared.images import get_image_column, get_image_paths
+        from tlc_plugin_sdk.shared.url_utils import normalize_url
 
-            _log(ctx, f"Reading images from table: {source_table_url}")
-            source_table = tlc.Table.from_url(normalize_url(source_table_url))
-            image_column = get_image_column(source_table)
-            _log(ctx, f"Reading image paths from column '{image_column}'")
-            # Absolutized, since the paths are written into a new table at a
-            # different location.
-            image_paths = get_image_paths(source_table, image_column)
-            if not image_paths:
-                ctx.fail(f"No images found in table {source_table_url}")
-        else:
-            _log(ctx, f"Scanning images in: {folder}")
-            image_paths = list_images_in_folder(folder)
-            if not image_paths:
-                ctx.fail(f"No images found in {folder}")
+        _log(ctx, f"Reading images from table: {source_table_url}")
+        source_table = tlc.Table.from_url(normalize_url(source_table_url))
+        image_column = get_image_column(source_table)
+        _log(ctx, f"Reading image paths from column '{image_column}'")
+        # Absolutized, since the paths are written into a new table at a
+        # different location.
+        image_paths = get_image_paths(source_table, image_column)
+        if not image_paths:
+            ctx.fail(f"No images found in table {source_table_url}")
+    else:
+        _log(ctx, f"Scanning images in: {folder}")
+        try:
+            image_paths = images_in_folder(folder)
+        except SourceError as exc:
+            ctx.fail(str(exc))
 
-        # Limit to max_images if specified
-        max_images = int(params.get("max_images", 0) or 0)
-        if max_images and max_images > 0 and len(image_paths) > max_images:
-            image_paths = image_paths[:max_images]
+    # Limit to max_images if specified
+    max_images = int(params.get("max_images", 0) or 0)
+    if max_images and max_images > 0 and len(image_paths) > max_images:
+        image_paths = image_paths[:max_images]
 
-        total = len(image_paths)
-        _log(ctx, f"Found {total} images" + (f" (limited to {max_images})" if max_images else ""))
+    total = len(image_paths)
+    _log(ctx, f"Found {total} images" + (f" (limited to {max_images})" if max_images else ""))
 
-        # Build schema based on modality — column names match tlc_ultralytics conventions
-        if modality == "bbox":
-            annotation_schema = tlc.data_types.BoundingBoxes2D.schema(classes=labels)
-            annotation_column = tlc.constants.BOUNDING_BOXES
-        else:
-            annotation_schema = tlc.data_types.SegmentationPolygons.schema(classes=labels)
-            annotation_column = tlc.constants.SEGMENTATIONS
+    # Build schema based on modality — column names match tlc_ultralytics conventions
+    if modality == "bbox":
+        annotation_schema = tlc.data_types.BoundingBoxes2D.schema(classes=labels)
+        annotation_column = tlc.constants.BOUNDING_BOXES
+    else:
+        annotation_schema = tlc.data_types.SegmentationPolygons.schema(classes=labels)
+        annotation_column = tlc.constants.SEGMENTATIONS
 
-        schemas: dict[str, Any] = {
-            "id": tlc.schemas.Int32Schema(writable=False),
-            "image": tlc.schemas.ImageSchema(sample_type="url"),
-            annotation_column: annotation_schema,
-            "review": tlc.schemas.CategoricalLabelSchema(classes=["Open", "Done"], display_name="review"),
-            "weight": tlc.schemas.SampleWeightSchema(),
-        }
+    schemas: dict[str, Any] = {
+        "id": tlc.schemas.Int32Schema(writable=False),
+        "image": tlc.schemas.ImageSchema(sample_type="url"),
+        annotation_column: annotation_schema,
+        "review": tlc.schemas.CategoricalLabelSchema(classes=["Open", "Done"], display_name="review"),
+        "weight": tlc.schemas.SampleWeightSchema(),
+    }
 
-        _log(ctx, f"Creating table: {project_name}/{dataset_name}/{table_name}")
-        writer = tlc.TableWriter(
-            table_name=table_name,
-            dataset_name=dataset_name,
-            project_name=project_name,
-            root_url=root_url,
-            description=f"SAM3 dataset: {', '.join(labels)} ({modality})",
-            schema=schemas,
-            if_exists="overwrite",
-        )
+    # Before any row is written: tlc folds a registered alias into the image paths as it writes them,
+    # so an alias registered after the table left the first table in a worker with absolute paths.
+    # A folder source always gets one; a table of absolute paths only works on the machine that wrote it.
+    if folder:
+        _register_folder_alias(ctx, folder, project_name=project_name, root_url=root_url)
 
-        # Read each image's real dimensions so the empty annotation carries the
-        # correct image_width/image_height (bbox x_max/y_max) up front. The
-        # input may be images alone — with no table to read sizes from — so we
-        # must open every image. ``read_image_size`` reads only the header, not
-        # the full image, and works on any storage backend.
-        from tlc_plugin_sdk.shared.images import read_image_size
+    _log(ctx, f"Creating table: {project_name}/{dataset_name}/{table_name}")
+    writer = tlc.TableWriter(
+        table_name=table_name,
+        dataset_name=dataset_name,
+        project_name=project_name,
+        root_url=root_url,
+        description=f"SAM3 dataset: {', '.join(labels)} ({modality})",
+        schema=schemas,
+        if_exists="overwrite",
+    )
 
-        _log(ctx, f"Reading dimensions for {total} images")
-        image_dims: list[tuple[int, int]] = []
-        for idx, image_path in enumerate(image_paths):
-            if ctx.cancelled:
-                _log(ctx, f"Cancelled while reading dimensions at image {idx}/{total}")
-                return ""
-            try:
-                image_dims.append(read_image_size(image_path))
-            except Exception:
-                logger.warning("Could not read dimensions for %s; storing 0x0", image_path, exc_info=True)
-                image_dims.append((0, 0))
-            if (idx + 1) % 500 == 0:
-                _log(ctx, f"Read dimensions for {idx + 1}/{total} images")
+    # Read each image's real dimensions so the empty annotation carries the
+    # correct image_width/image_height (bbox x_max/y_max) up front. The
+    # input may be images alone — with no table to read sizes from — so we
+    # must open every image. ``read_image_size`` reads only the header, not
+    # the full image, and works on any storage backend.
+    from tlc_plugin_sdk.shared.images import read_image_size
 
-        empty_annotations: list[Any]
-        if modality == "bbox":
-            empty_annotations = [
-                tlc.data_types.BoundingBoxes2D.create_empty(image_width=w, image_height=h) for (w, h) in image_dims
-            ]
-        else:
-            empty_annotations = [
-                tlc.data_types.SegmentationPolygons.create_empty(image_width=w, image_height=h) for (w, h) in image_dims
-            ]
+    _log(ctx, f"Reading dimensions for {total} images")
+    image_dims: list[tuple[int, int]] = []
+    for idx, image_path in enumerate(image_paths):
+        if ctx.cancelled:
+            _log(ctx, f"Cancelled while reading dimensions at image {idx}/{total}")
+            return ""
+        try:
+            image_dims.append(read_image_size(image_path))
+        except Exception:
+            logger.warning("Could not read dimensions for %s; storing 0x0", image_path, exc_info=True)
+            image_dims.append((0, 0))
+        if (idx + 1) % 500 == 0:
+            _log(ctx, f"Read dimensions for {idx + 1}/{total} images")
 
-        writer.add_batch({
-            "image": image_paths,
-            annotation_column: empty_annotations,
-            "review": [0] * total,
-            "weight": [0.0] * total,
-        })
-        table = writer.finalize()
-        table_url = str(table.url)
-        ctx.metric("images", total)
-        ctx.metric("table", table_url)
-        _log(ctx, f"Created table: {table.url} ({total} images)")
+    empty_annotations: list[Any]
+    if modality == "bbox":
+        empty_annotations = [
+            tlc.data_types.BoundingBoxes2D.create_empty(image_width=w, image_height=h) for (w, h) in image_dims
+        ]
+    else:
+        empty_annotations = [
+            tlc.data_types.SegmentationPolygons.create_empty(image_width=w, image_height=h) for (w, h) in image_dims
+        ]
 
-        # An alias is always registered for a folder source — the widget no longer offers to skip it,
-        # and a table of absolute paths only works on the machine that wrote it (Paul, 2026-09-07).
-        if folder:
-            from tlc_plugin_sdk.shared.aliases import default_alias_token, register_alias
+    writer.add_batch({
+        "image": image_paths,
+        annotation_column: empty_annotations,
+        "review": [0] * total,
+        "weight": [0.0] * total,
+    })
+    table = writer.finalize()
+    table_url = str(table.url)
+    ctx.metric("images", total)
+    ctx.metric("table", table_url)
+    _log(ctx, f"Created table: {table.url} ({total} images)")
 
-            token = str(params.get("alias_token", "") or "").strip() or default_alias_token(project_name)
-            alias_folder = str(params.get("alias_folder", "") or "").strip() or folder
-            register_alias(project_name=project_name, image_folder=alias_folder, alias_token=token, root_url=root_url)
-            _log(ctx, f"Registered alias <{token}> → {alias_folder}")
+    return table_url
 
-        return table_url
-    finally:
-        # Restore alias overrides
-        if alias_originals:
-            from tlc_plugin_sdk.shared.aliases import restore_aliases
 
-            restore_aliases(alias_originals)
+def _register_folder_alias(ctx: JobContext, folder: str, *, project_name: str, root_url: str | None) -> None:
+    """Register the project's URL alias for a folder source, before its rows are written.
+
+    ``folder`` is where THIS run reads the images, and the host may have rewritten it (a copy staged
+    on a GPU node, or a path on the node the person named). ``alias_folder`` is the durable location
+    the person chose, which the page sends with every run and the host leaves alone. The session
+    alias points at the folder being read, so the rows fold into ``<TOKEN>``; the persisted alias
+    points at the durable location, so the Dashboard and later runs find the data there and never
+    at a node's stage path.
+
+    Args:
+        ctx: Job context; ``ctx.params`` may carry ``alias_token`` and ``alias_folder``.
+        folder: The folder this run reads, already normalized.
+        project_name: The project that owns the alias.
+        root_url: The project root the table is written under (``None`` = tlc's default).
+
+    """
+    from tlc_plugin_sdk.shared.aliases import default_alias_token, register_alias
+    from tlc_plugin_sdk.shared.url_utils import normalize_url
+
+    params = ctx.params
+    token = str(params.get("alias_token", "") or "").strip() or default_alias_token(project_name)
+    durable = normalize_url(str(params.get("alias_folder", "") or "").strip()) or folder
+    remote = durable if durable.rstrip("/") != folder.rstrip("/") else None
+    result = register_alias(
+        project_name=project_name, image_folder=folder, alias_token=token, remote_path=remote, root_url=root_url
+    )
+    if "error" in result:
+        _log(ctx, f"Warning: {result['error']}; the table keeps absolute image paths")
+        return
+    _log(ctx, f"Registered alias <{token}> → {result.get('persisted') or durable}")
 
 
 def _reduce_embeddings(embeddings: Any, n_components: int) -> Any:

@@ -78,3 +78,27 @@ def test_a_permanent_failure_is_reported_not_retried_behind_the_poll(monkeypatch
             break
         __import__("time").sleep(0.01)
     assert len(calls) == 2
+
+
+def test_the_warmup_says_whether_it_downloads_or_loads_from_the_cache(monkeypatch: Any) -> None:
+    """A worker that restarts on a warm machine loads the weights from disk; saying "downloading"
+    every time made a cache hit look like a second download."""
+    import threading
+
+    for cached, words in ((True, "cache"), (False, "downloading")):
+        gate = threading.Event()  # holds the load, so the call returns while it is still warming
+        inference = _inference(monkeypatch, lambda device, token=None, gate=gate: gate.wait(5))
+        monkeypatch.setattr(inference, "weights_cached", lambda cached=cached: cached)
+        assert words in inference.warmup_model("cuda")["detail"]
+        gate.set()
+
+
+def test_weights_count_as_cached_only_when_every_file_is(monkeypatch: Any) -> None:
+    inference = _inference(monkeypatch, lambda device, token=None: None)
+    hub = types.ModuleType("huggingface_hub")
+    cached = {"config.json": "/cache/config.json"}
+    vars(hub)["try_to_load_from_cache"] = lambda repo, name: cached.get(name)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    assert inference.weights_cached() is False
+    cached["sam3.pt"] = "/cache/sam3.pt"
+    assert inference.weights_cached() is True

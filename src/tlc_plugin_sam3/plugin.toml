@@ -27,9 +27,16 @@ entrypoint = "tlc_plugin_sam3:SAM3Plugin"
 # installs it ONLY into this plugin's provisioned venv, never the host venv.
 provision_extra = "sam3"
 requires_gpu = true
-# Routes that must run on the armed GPU node: the model lives in that worker. Configs stay on
-# the controller; read-labels / list-images read data the controller can always reach.
-node_routes = ["/preview", "/model-warmup", "/model-status"]
+# Routes that must run on the armed GPU node: the model lives in that worker, and /check-source
+# looks for the preview's images where /preview will read them. Configs stay on the controller;
+# read-labels / list-images read data the controller can always reach.
+node_routes = ["/preview", "/check-source", "/model-warmup", "/model-status"]
+# Body keys naming the data a run or a node route READS: the Hub plans those (stream, copy to the
+# node, or a path already on it) and refuses a path that only exists on the person's computer.
+# A run sends `folder` or `source_table_url`; /preview and /check-source send `folder` or
+# `table_url`. A run may get `folder` rewritten to where the data is for that run; the alias it
+# persists follows `alias_folder`, which is not an input and is never rewritten.
+data_inputs = ["folder", "source_table_url", "table_url"]
 # SAM 3's weights are gated on Hugging Face: the person chooses a huggingface token Connection
 # in the Hub, which the host grants to this plugin's jobs and to the routes below. /preview and
 # /model-warmup download the model; /model-status reports which token source they would use.

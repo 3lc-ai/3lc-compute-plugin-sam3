@@ -91,14 +91,30 @@ def get_route_handlers() -> list[BaseRouteHandler]:
 
     @post("/list-images", status_code=200, sync_to_thread=True)
     def list_images(data: dict[str, Any]) -> dict[str, Any]:
-        from tlc_plugin_sam3.inference import list_images_in_folder
+        from tlc_plugin_sam3.sources import SourceError, images_in_folder
 
-        # normalize_url expands a user-typed ``~`` (protocol URLs pass through untouched).
-        folder = normalize_url(str(data.get("folder", "")).strip())
-        if not folder:
+        if not str(data.get("folder", "") or "").strip():
             return {"error": "folder is required"}
-        images = list_images_in_folder(folder)
+        try:
+            images = images_in_folder(str(data["folder"]))
+        except SourceError as exc:
+            return {"error": str(exc)}
         return {"count": len(images), "sample": images[:20]}
+
+    # ── Source check (before the model warm-up) ──
+    #
+    # A node route, like /preview: it looks for the images on the worker the preview will read them
+    # on. The page asks it first, so a folder that is missing there, or holds no images, is reported
+    # in seconds instead of after a multi-GB model download.
+
+    @post("/check-source", status_code=200, sync_to_thread=True)
+    def check_source_route(data: dict[str, Any]) -> Response[dict[str, Any]]:
+        from tlc_plugin_sam3.sources import check_source
+
+        result = check_source(data)
+        if "error" in result:
+            return Response({"detail": str(result["error"])}, status_code=400)
+        return Response(result, status_code=200)
 
     # ── Read labels from table ──
 
@@ -173,6 +189,7 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         model_status_route,
         preview,
         list_images,
+        check_source_route,
         read_labels,
         list_configs,
         save_config,
@@ -188,11 +205,7 @@ def _run_preview(data: dict[str, Any]) -> dict[str, Any]:
     ``folder``). Returns image_path, preview (base64 PNG), num_detections, and the
     detections list.
     """
-    from tlc_plugin_sam3.inference import (
-        list_images_in_folder,
-        predict_single_image,
-        render_preview,
-    )
+    from tlc_plugin_sam3.sources import SourceError, images_in_folder
 
     folder = normalize_url(data.get("folder", "").strip())
     table_url = data.get("table_url", "").strip()
@@ -221,12 +234,16 @@ def _run_preview(data: dict[str, Any]) -> dict[str, Any]:
             idx = random.randint(0, len(table) - 1)
             image_path = resolve_image_url(str(table.table_rows[idx][image_column]), table.url).to_str()
         elif folder:
-            images = list_images_in_folder(folder)
-            if not images:
-                return {"error": f"No images found in {folder}"}
+            try:
+                images = images_in_folder(folder)
+            except SourceError as exc:
+                return {"error": str(exc)}
             image_path = random.choice(images)
         else:
             return {"error": "Either folder or table_url is required"}
+
+    # The model is imported (and on first use downloaded) only once an image has been found.
+    from tlc_plugin_sam3.inference import predict_single_image, render_preview
 
     # load_image handles local paths (PIL directly), cloud/alias paths
     # (via tlc.Url), and paths relative to the table.

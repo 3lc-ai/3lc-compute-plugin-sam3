@@ -44,7 +44,6 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     # ``inference`` imports torch at module level; this plugin's own venv has no GPU extra.
     inference = types.ModuleType("tlc_plugin_sam3.inference")
-    vars(inference)["list_images_in_folder"] = lambda folder: ["/data/a.jpg"]
     for name in (
         "get_box_embeddings",
         "get_image_embedding",
@@ -74,8 +73,9 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     class FakeTable(list[Any]):
         project_name = "proj"
 
-    monkeypatch.setattr(tlc.Table, "from_url", staticmethod(lambda url: FakeTable()))
+    monkeypatch.setattr(tlc.Table, "from_url", staticmethod(lambda url: FakeTable([{"image": "/data/a.jpg"}])))
     monkeypatch.setattr(images, "read_image_size", lambda path: (10, 10))
+    monkeypatch.setattr(images, "list_image_urls", lambda folder, max_count=10000: ["/data/a.jpg"])
     monkeypatch.setattr(images, "get_image_column", lambda table: "image")
     monkeypatch.setattr(aliases, "register_alias", lambda **kwargs: seen.setdefault("alias", kwargs))
     monkeypatch.setattr(tlc_plugin_sam3, "_read_labels_from_table", lambda table: ["cat"])
