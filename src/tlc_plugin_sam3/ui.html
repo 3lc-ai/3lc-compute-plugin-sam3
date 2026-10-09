@@ -458,6 +458,7 @@ function sam3SourceChanged() {
   var type = document.getElementById("sam3-source-type").value;
   document.getElementById("sam3-folder-group").style.display = type === "folder" ? "" : "none";
   document.getElementById("sam3-table-group").style.display = type === "table" ? "" : "none";
+  document.getElementById("sam3-alias-area").style.display = type === "folder" ? "" : "none";
   sam3CheckTableAgainstRunTarget();
 }
 

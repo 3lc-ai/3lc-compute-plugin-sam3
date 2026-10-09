@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Data movement
 
+- The folder alias card is hidden for table inputs, whose aliases already belong to their source project.
+
 - The manifest declares the data SAM3 reads: `[runtime] data_inputs = ["folder", "source_table_url",
   "table_url"]`. A Hub that reads it plans that data for a run (stream it, copy it to the GPU node,
   or use a path already on the node) and refuses a folder that only exists on the person's own
