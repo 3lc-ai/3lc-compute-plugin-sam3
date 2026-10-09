@@ -7,15 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- The Hugging Face token is a Connection. The page's token box is replaced by a **Choose…** button
-  that opens the Hub's dialog (`PLUGIN_API.chooseCredential("huggingface")`). There the person picks
-  one of their huggingface token Connections, allows an existing one for SAM3, or adds a token.
-  The manifest declares `credentials = [{service = "huggingface", required = true}]` and
-  `credential_routes = ["/preview", "/model-warmup", "/model-status"]`, so the host hands the
-  Connection's value to jobs and to those routes. `/model-status` (and `/model-warmup`) report
-  which token source the worker uses (`hf_token`: `connection`, `environment`, `legacy-file` or
-  `none`), never the token itself.
+### Changed
+
+#### Data movement
+
 - The manifest declares the data SAM3 reads: `[runtime] data_inputs = ["folder", "source_table_url",
   "table_url"]`. A Hub that reads it plans that data for a run (stream it, copy it to the GPU node,
   or use a path already on the node) and refuses a folder that only exists on the person's own
@@ -24,40 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   target changes (`PLUGIN_API.checkDataForRunTarget` / `onRunTargetChange`). A table a GPU node
   cannot read is flagged under the field before the run is submitted. A Hub that annotates table
   inputs itself (`hostChecksTableInputs`), or one without the API, shows no second note.
-- The model download receives the token explicitly instead of reading `HF_TOKEN` when it runs.
-  The environment is shared by every job and request in a worker, and the warm-up loads on a
-  thread of its own. A worker's own `HF_TOKEN` is read once, when the plugin is imported.
-
-### Changed
-- Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
-  directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
-  it from the `staging` index.
-- CI runs on pull requests into, and pushes to, `config-service-poc` as well as `main`.
-- Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
-- Resolve the plugin SDK from the explicit `staging` index declared in `pyproject.toml`; developers and CI
-  need only `UV_INDEX_STAGING_USERNAME` / `UV_INDEX_STAGING_PASSWORD`.
-- Stamp and validate package and manifest versions together before publication.
-- Manual builds publish only to private CloudRepo when explicitly requested.
-
-- A folder source always gets its URL alias; the widget no longer offers to skip it. A table of
-  absolute paths only works on the machine that wrote it, which a remote node is not.
-- Runs, tables and their URL aliases are created under the project root the job carries
-  (`ctx.project_root_url`), not the worker's configured root.
-### Removed
-- `POST /set-hf-token` and `GET /hf-token-status`. Nothing writes `hf-token.json` any more. For this
-  release only, a token file saved by an earlier version is still read when no Connection is chosen
-  and the worker has no `HF_TOKEN`. The page then says "using the legacy token file — choose a
-  Connection", and so does a job's log.
 - The create step no longer applies `_alias_overrides` itself; the SDK worker applies them around
   every job.
-
-### Fixed
-- The legacy token file is found again with an SDK that resolves its config root when a store
-  is built (`config_store.config_root()`; `CONFIG_ROOT` is now only an override, `None` by
-  default). A worker with no home directory reads no legacy token instead of failing the job.
-- The preview button no longer hangs for up to 20 minutes when the worker cannot answer
-  `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build
-  answers 404) or three failed polls in a row now stops the loop and says why in the log.
 - A preview looks for its images before it loads the model. The new `POST /check-source` node route
   runs on the worker that will read the images and answers in seconds. Before, a preview on a GPU
   node downloaded the model (minutes on a fresh node) and only then reported "No images found".
@@ -79,6 +42,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The warm-up says whether it downloads the weights or loads them from the machine's Hugging Face
   cache, and the page logs that. It used to announce "downloading the SAM3 model" for every cold
   worker, so a worker restart on a warm machine looked like a second download.
+
+
+### Added
+- The Hugging Face token is a Connection. The page's token box is replaced by a **Choose…** button
+  that opens the Hub's dialog (`PLUGIN_API.chooseCredential("huggingface")`). There the person picks
+  one of their huggingface token Connections, allows an existing one for SAM3, or adds a token.
+  The manifest declares `credentials = [{service = "huggingface", required = true}]` and
+  `credential_routes = ["/preview", "/model-warmup", "/model-status"]`, so the host hands the
+  Connection's value to jobs and to those routes. `/model-status` (and `/model-warmup`) report
+  which token source the worker uses (`hf_token`: `connection`, `environment`, `legacy-file` or
+  `none`), never the token itself.
+
+- The model download receives the token explicitly instead of reading `HF_TOKEN` when it runs.
+  The environment is shared by every job and request in a worker, and the warm-up loads on a
+  thread of its own. A worker's own `HF_TOKEN` is read once, when the plugin is imported.
+
+#### Other changes
+- Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
+  directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
+  it from the `staging` index.
+- CI runs on pull requests into, and pushes to, `config-service-poc` as well as `main`.
+- Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
+- Resolve the plugin SDK from the explicit `staging` index declared in `pyproject.toml`; developers and CI
+  need only `UV_INDEX_STAGING_USERNAME` / `UV_INDEX_STAGING_PASSWORD`.
+- Stamp and validate package and manifest versions together before publication.
+- Manual builds publish only to private CloudRepo when explicitly requested.
+
+- A folder source always gets its URL alias; the widget no longer offers to skip it. A table of
+  absolute paths only works on the machine that wrote it, which a remote node is not.
+- Runs, tables and their URL aliases are created under the project root the job carries
+  (`ctx.project_root_url`), not the worker's configured root.
+### Removed
+- `POST /set-hf-token` and `GET /hf-token-status`. Nothing writes `hf-token.json` any more. For this
+  release only, a token file saved by an earlier version is still read when no Connection is chosen
+  and the worker has no `HF_TOKEN`. The page then says "using the legacy token file — choose a
+  Connection", and so does a job's log.
+
+### Fixed
+- The legacy token file is found again with an SDK that resolves its config root when a store
+  is built (`config_store.config_root()`; `CONFIG_ROOT` is now only an override, `None` by
+  default). A worker with no home directory reads no legacy token instead of failing the job.
+- The preview button no longer hangs for up to 20 minutes when the worker cannot answer
+  `/model-warmup`. A reply without a warm-up state (a remote node running an older plugin build
+  answers 404) or three failed polls in a row now stops the loop and says why in the log.
+
 
 ## [0.2.5] - 2026-09-11
 

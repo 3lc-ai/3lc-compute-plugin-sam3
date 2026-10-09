@@ -833,6 +833,8 @@ function sam3CreateAndPredict() {
     // Only these alias fields: sam3 never copies the data itself, so the card's alias_copy_* are not sent.
     // alias_folder is always filled in: it is the durable location the persisted alias points at,
     // while the Hub may rewrite `folder` to a copy on a GPU node for this run.
+    var aliasError = _tlcAliasLocationError("sam3");
+    if (aliasError) { sam3Log(aliasError); return; }
     var alias = _tlcGetAliasValues("sam3");
     body.alias_enabled = alias.alias_enabled;
     body.alias_token = alias.alias_token;
