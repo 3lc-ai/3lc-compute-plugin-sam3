@@ -840,9 +840,9 @@ function sam3CreateAndPredict() {
     body.alias_enabled = alias.alias_enabled;
     body.alias_token = alias.alias_token;
     body.alias_folder = alias.alias_folder || folder;
-    // The Hub may rewrite `folder` for one run; the echo says where it was picked, so an alias set on
-    // a folder above it keeps the subfolders in the table's paths.
-    body.submitted_sources = { folder: folder };
+    // The Hub may rewrite `folder` for one run; this says where it was picked, so an alias set on a
+    // folder above it keeps the subfolders in the table's paths.
+    body.alias_source_folder = alias.alias_source_folder || folder;
   }
 
   sam3AutoSave();

@@ -99,15 +99,15 @@ def test_an_alias_on_a_parent_folder_keeps_the_subfolders_in_the_rows(
 ) -> None:
     # Read in place: the alias is the parent the person typed, so the session alias is that parent too
     # and rows are written as <TOKEN>/sub/a.jpg, which the persisted alias resolves to the source.
-    _run(
-        tmp_path, folder="s3://b/imgs/sub", alias_folder="s3://b/imgs", submitted_sources={"folder": "s3://b/imgs/sub"}
-    )
+    _run(tmp_path, folder="s3://b/imgs/sub", alias_folder="s3://b/imgs", alias_source_folder="s3://b/imgs/sub")
     alias = _alias(events)
     assert alias["image_folder"] == "s3://b/imgs"
     assert alias["remote_path"] is None
 
 
-def test_an_alias_on_a_parent_folder_works_without_the_echo(tmp_path: Path, events: list[tuple[str, Any]]) -> None:
+def test_an_alias_on_a_parent_folder_works_without_the_source_folder(
+    tmp_path: Path, events: list[tuple[str, Any]]
+) -> None:
     _run(tmp_path, folder="s3://b/imgs/sub/", alias_folder="s3://b/imgs/")
     alias = _alias(events)
     assert alias["image_folder"] == "s3://b/imgs"
@@ -121,7 +121,7 @@ def test_a_copy_that_keeps_the_layout_under_a_parent_alias_is_read_from_its_matc
         tmp_path,
         folder="/srv/3lc/stage/imgs/sub",
         alias_folder="s3://b/imgs",
-        submitted_sources={"folder": "s3://b/imgs/sub"},
+        alias_source_folder="s3://b/imgs/sub",
     )
     alias = _alias(events)
     assert alias["image_folder"] == "/srv/3lc/stage/imgs"
@@ -138,7 +138,7 @@ def test_a_copy_that_loses_the_layout_under_a_parent_alias_is_refused_before_any
             tmp_path,
             folder="/srv/3lc/stage/imgs-1a2b",
             alias_folder="s3://b/imgs",
-            submitted_sources={"folder": "s3://b/imgs/sub"},
+            alias_source_folder="s3://b/imgs/sub",
         )
     assert [name for name, _ in events if name in ("alias", "rows")] == []
 
@@ -150,7 +150,7 @@ def test_a_copy_of_the_alias_folder_itself_keeps_the_durable_folder_as_the_alias
         tmp_path,
         folder="/srv/3lc/stage/imgs-1a2b",
         alias_folder="s3://b/imgs",
-        submitted_sources={"folder": "s3://b/imgs"},
+        alias_source_folder="s3://b/imgs",
     )
     alias = _alias(events)
     assert alias["image_folder"] == "/srv/3lc/stage/imgs-1a2b"

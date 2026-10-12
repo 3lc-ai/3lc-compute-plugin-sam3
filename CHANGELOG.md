@@ -88,8 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An alias on a folder above the picked one keeps the subfolders in the table.** With the alias
   card's source root set to a parent folder, rows were written against the picked folder while the
   saved alias pointed at the parent, so every image path lost a segment. Rows are now written as
-  `<TOKEN>/sub/a.jpg` against the parent. The page echoes the picked folder (`submitted_sources`) so a
+  `<TOKEN>/sub/a.jpg` against the parent. The page sends the picked folder (`alias_source_folder`) so a
   node copy that keeps the layout reads correctly; one that does not is refused before any row is written.
+  The rule is the SDK's `register_run_alias`, shared with every plugin that uses the alias card
+  (requires an SDK that has it).
 
 #### Other changes
 
