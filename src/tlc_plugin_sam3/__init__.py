@@ -568,17 +568,25 @@ def _register_folder_alias(ctx: JobContext, folder: str, *, project_name: str, r
     """Register the project's URL alias for a folder source, before its rows are written.
 
     ``folder`` is where THIS run reads the images, and the host may have rewritten it (a copy staged
-    on a GPU node, or a path on the node the person named). ``alias_folder`` is the durable location
-    the person chose, which the page sends with every run and the host leaves alone. The session
-    alias points at the folder being read, so the rows fold into ``<TOKEN>``; the persisted alias
-    points at the durable location, so the Dashboard and later runs find the data there and never
-    at a node's stage path.
+    on a GPU node, or a path on the node the person named); ``submitted_sources.folder`` echoes the
+    folder as picked. ``alias_folder`` is the durable location the person chose — the picked folder
+    or a folder above it — which the page sends with every run and the host leaves alone.
+
+    The persisted alias always points at ``alias_folder``, so the Dashboard and later runs find the
+    data there. The session alias points where the rows must be folded from: for an alias above the
+    picked folder, the rows keep the subfolders between them (``<TOKEN>/sub/a.jpg``), so the session
+    alias is the matching folder above the one read.
 
     Args:
-        ctx: Job context; ``ctx.params`` may carry ``alias_token`` and ``alias_folder``.
+        ctx: Job context; ``ctx.params`` may carry ``alias_token``, ``alias_folder`` and
+            ``submitted_sources``.
         folder: The folder this run reads, already normalized.
         project_name: The project that owns the alias.
         root_url: The project root the table is written under (``None`` = tlc's default).
+
+    Raises:
+        JobFailed: The alias covers a folder above the picked one, and the folder this run reads
+            (a copy) does not end in the same subfolders, so no alias would resolve its rows.
 
     """
     from tlc_plugin_sdk.shared.aliases import default_alias_token, register_alias
@@ -586,15 +594,58 @@ def _register_folder_alias(ctx: JobContext, folder: str, *, project_name: str, r
 
     params = ctx.params
     token = str(params.get("alias_token", "") or "").strip() or default_alias_token(project_name)
-    durable = normalize_url(str(params.get("alias_folder", "") or "").strip()) or folder
-    remote = durable if durable.rstrip("/") != folder.rstrip("/") else None
+    read = folder.rstrip("/")
+    durable = (normalize_url(str(params.get("alias_folder", "") or "").strip()) or folder).rstrip("/")
+    echo = params.get("submitted_sources")
+    picked = normalize_url(str(echo.get("folder", "") or "").strip()) if isinstance(echo, dict) else ""
+    source = (picked or read).rstrip("/")
+    if _is_under(source, durable):
+        session = _session_alias_folder(read, source, durable, token)
+        remote = durable if session != durable else None
+    else:
+        # The alias folder is a durable copy elsewhere (no picked folder below it): the rows are
+        # folded from the folder read and every reader resolves the token to the durable copy.
+        session, remote = read, (durable if durable != read else None)
     result = register_alias(
-        project_name=project_name, image_folder=folder, alias_token=token, remote_path=remote, root_url=root_url
+        project_name=project_name, image_folder=session, alias_token=token, remote_path=remote, root_url=root_url
     )
     if "error" in result:
         _log(ctx, f"Warning: {result['error']}; the table keeps absolute image paths")
         return
     _log(ctx, f"Registered alias <{token}> → {result.get('persisted') or durable}")
+
+
+def _is_under(path: str, folder: str) -> bool:
+    """True when *path* is *folder* or inside it (local paths and URLs alike)."""
+    path, folder = path.strip().rstrip("/"), folder.strip().rstrip("/")
+    return path == folder or path.startswith(folder + "/")
+
+
+def _session_alias_folder(read_folder: str, source_folder: str, alias_folder: str, token: str) -> str:
+    """Where the session alias must point so rows read from *read_folder* resolve under *alias_folder*.
+
+    A row read from ``<read_folder>/b.jpg`` is written as ``<TOKEN>/<rel>/b.jpg`` — *rel* being
+    where the picked folder sits below the alias folder — and the persisted alias resolves that to
+    ``<alias_folder>/<rel>/b.jpg``. That needs a session folder S with ``S/<rel> == read_folder``:
+    the read folder itself when the alias is the picked folder, else the read folder minus *rel*
+    (which, read in place, is the alias folder itself).
+
+    Raises:
+        JobFailed: The read folder does not end in *rel* (a copy that did not keep the layout).
+
+    """
+    rel = source_folder.strip().rstrip("/")[len(alias_folder.strip().rstrip("/")) :].strip("/")
+    read = read_folder.strip().rstrip("/")
+    if not rel:
+        return read
+    if read.endswith("/" + rel):
+        return read[: -len(rel) - 1]
+    msg = (
+        f"This run reads the images from {read}, a copy of {source_folder}, but the alias <{token}> points at "
+        f"{alias_folder}, a folder above it; the table's paths would not resolve to the source. Point the "
+        "alias at the image folder itself, or read the images where they are for this run."
+    )
+    raise JobFailed(msg)
 
 
 def _reduce_embeddings(embeddings: Any, n_components: int) -> Any:

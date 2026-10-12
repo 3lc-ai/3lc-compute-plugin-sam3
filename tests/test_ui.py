@@ -40,3 +40,9 @@ def test_the_table_source_is_checked_against_the_run_target_on_bridges_that_can(
     assert "PLUGIN_API.hostChecksTableInputs" in check
     assert 'typeof PLUGIN_API.onRunTargetChange === "function"' in UI
     assert "PLUGIN_API.onRunTargetChange(sam3CheckTableAgainstRunTarget)" in UI
+
+
+def test_a_folder_run_echoes_the_picked_folder_beside_the_alias_folder() -> None:
+    # The Hub may rewrite `folder`; the echo lets the run keep subfolders under a parent alias.
+    assert "body.submitted_sources = { folder: folder };" in UI
+    assert UI.index("body.alias_folder = ") < UI.index("body.submitted_sources = ")
