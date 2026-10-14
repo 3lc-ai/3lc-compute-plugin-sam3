@@ -567,34 +567,35 @@ def _run_create_table(ctx: JobContext, *, root_url: str | None = None) -> str:
 def _register_folder_alias(ctx: JobContext, folder: str, *, project_name: str, root_url: str | None) -> None:
     """Register the project's URL alias for a folder source, before its rows are written.
 
-    ``folder`` is where THIS run reads the images, and the host may have rewritten it (a copy staged
-    on a GPU node, or a path on the node the person named). ``alias_folder`` is the durable location
-    the person chose, which the page sends with every run and the host leaves alone. The session
-    alias points at the folder being read, so the rows fold into ``<TOKEN>``; the persisted alias
-    points at the durable location, so the Dashboard and later runs find the data there and never
-    at a node's stage path.
+    ``folder`` is where THIS run reads the images; the host may have rewritten it (a copy staged on
+    a GPU node, or a path on the node the person named). The alias card's values in the run body
+    say where the images were picked and which folder the alias points at; the SDK's one alias rule
+    (``register_run_alias``) keeps the subfolders below an alias on a parent folder and refuses a
+    copy that lost them.
 
     Args:
-        ctx: Job context; ``ctx.params`` may carry ``alias_token`` and ``alias_folder``.
+        ctx: Job context; ``ctx.params`` carries the alias card's values.
         folder: The folder this run reads, already normalized.
         project_name: The project that owns the alias.
         root_url: The project root the table is written under (``None`` = tlc's default).
 
-    """
-    from tlc_plugin_sdk.shared.aliases import default_alias_token, register_alias
-    from tlc_plugin_sdk.shared.url_utils import normalize_url
+    Raises:
+        JobFailed: The alias is on a folder above the picked one and the copy read did not keep the
+            layout below it.
 
-    params = ctx.params
-    token = str(params.get("alias_token", "") or "").strip() or default_alias_token(project_name)
-    durable = normalize_url(str(params.get("alias_folder", "") or "").strip()) or folder
-    remote = durable if durable.rstrip("/") != folder.rstrip("/") else None
-    result = register_alias(
-        project_name=project_name, image_folder=folder, alias_token=token, remote_path=remote, root_url=root_url
+    """
+    from tlc_plugin_sdk.shared.aliases import register_run_alias
+
+    # A folder source always gets an alias: a table of absolute paths only works on one machine.
+    result = register_run_alias(
+        {**ctx.params, "alias_enabled": True}, folder, project_name=project_name, root_url=root_url
     )
+    if result is None:
+        return
     if "error" in result:
         _log(ctx, f"Warning: {result['error']}; the table keeps absolute image paths")
         return
-    _log(ctx, f"Registered alias <{token}> → {result.get('persisted') or durable}")
+    _log(ctx, f"Registered alias <{result.get('token', '')}> → {result.get('persisted') or result.get('path')}")
 
 
 def _reduce_embeddings(embeddings: Any, n_components: int) -> Any:

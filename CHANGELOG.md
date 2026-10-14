@@ -82,6 +82,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Connection", and so does a job's log.
 
 ### Fixed
+
+#### Data movement
+
+- **An alias on a folder above the picked one keeps the subfolders in the table.** With the alias
+  card's source root set to a parent folder, rows were written against the picked folder while the
+  saved alias pointed at the parent, so every image path lost a segment. Rows are now written as
+  `<TOKEN>/sub/a.jpg` against the parent. The page sends the picked folder (`alias_source_folder`) so a
+  node copy that keeps the layout reads correctly; one that does not is refused before any row is written.
+  The rule is the SDK's `register_run_alias`, shared with every plugin that uses the alias card
+  (requires an SDK that has it).
+
+#### Other changes
+
 - The legacy token file is found again with an SDK that resolves its config root when a store
   is built (`config_store.config_root()`; `CONFIG_ROOT` is now only an override, `None` by
   default). A worker with no home directory reads no legacy token instead of failing the job.
