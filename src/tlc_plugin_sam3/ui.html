@@ -2,20 +2,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <style>
 /* ── SAM3-specific styles ── */
-.sam3-config-bar {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 14px; padding: 10px 14px;
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 8px);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
-.sam3-config-bar select {
-  flex: 1; max-width: 280px; font-size: 12px; font-weight: 500;
-}
-.sam3-config-bar .bar-label {
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.3px; color: var(--text-muted); white-space: nowrap;
-}
 .sam3-layout {
   display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
 }
@@ -27,7 +13,7 @@
 }
 </style>
 
-<div class="plugin-page">
+<div class="plugin-page" id="sam3-page">
 <!-- ── Hero ───────────────────────────────────────────────── -->
 <div class="plugin-hero" style="padding:20px 24px">
       <h2 style="margin-bottom:6px;display:flex;align-items:center;gap:10px"><span class="sam3-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor" aria-hidden="true"><path d="M6.915 4.03c-1.968 0-3.683 1.28-4.871 3.113C.704 9.208 0 11.883 0 14.449c0 .706.07 1.369.21 1.973a6.624 6.624 0 0 0 .265.86 5.297 5.297 0 0 0 .371.761c.696 1.159 1.818 1.927 3.593 1.927 1.497 0 2.633-.671 3.965-2.444.76-1.012 1.144-1.626 2.663-4.32l.756-1.339.186-.325c.061.1.121.196.183.3l2.152 3.595c.724 1.21 1.665 2.556 2.47 3.314 1.046.987 1.992 1.22 3.06 1.22 1.075 0 1.876-.355 2.455-.843a3.743 3.743 0 0 0 .81-.973c.542-.939.861-2.127.861-3.745 0-2.72-.681-5.357-2.084-7.45-1.282-1.912-2.957-2.93-4.716-2.93-1.047 0-2.088.467-3.053 1.308-.652.57-1.257 1.29-1.82 2.05-.69-.875-1.335-1.547-1.958-2.056-1.182-.966-2.315-1.303-3.454-1.303zm10.16 2.053c1.147 0 2.188.758 2.992 1.999 1.132 1.748 1.647 4.195 1.647 6.4 0 1.548-.368 2.9-1.839 2.9-.58 0-1.027-.23-1.664-1.004-.496-.601-1.343-1.878-2.832-4.358l-.617-1.028a44.908 44.908 0 0 0-1.255-1.98c.07-.109.141-.224.211-.327 1.12-1.667 2.118-2.602 3.358-2.602zm-10.201.553c1.265 0 2.058.791 2.675 1.446.307.327.737.871 1.234 1.579l-1.02 1.566c-.757 1.163-1.882 3.017-2.837 4.338-1.191 1.649-1.81 1.817-2.486 1.817-.524 0-1.038-.237-1.383-.794-.263-.426-.464-1.13-.464-2.046 0-2.221.63-4.535 1.66-6.088.454-.687.964-1.226 1.533-1.533a2.264 2.264 0 0 1 1.088-.285z"/></svg></span>SAM3 Auto-Labeling</h2>
@@ -75,16 +61,8 @@
   <span id="sam3-hf-status" class="text-sm"></span>
 </div>
 
-<!-- ── Config bar (replaces sidebar column) ────────────────── -->
-<div class="sam3-config-bar">
-  <span class="bar-label">Config</span>
-  <select id="sam3-config-select" class="form-control" onchange="sam3OnConfigSelect(this.value)">
-    <option value="">New config</option>
-  </select>
-  <button class="btn btn-ghost btn-sm" onclick="sam3NewConfig()">+ New</button>
-  <button class="btn btn-secondary btn-sm" id="sam3-save-btn" onclick="sam3SaveConfig()" style="display:none">Save New</button>
-  <button class="btn btn-danger btn-sm" id="sam3-delete-btn" onclick="sam3DeleteConfig()" style="display:none">Delete</button>
-</div>
+<!-- ── Presets: the SDK's preset bar renders here (_tlcPluginPresets) ── -->
+<div id="sam3-presets"></div>
 
 <!-- ── Step 1: Setup + Preview side by side ───────────────── -->
 <div class="sam3-layout">
@@ -94,12 +72,6 @@
         <div class="card-title" style="font-size:13px"><span class="plugin-section-number">1</span> Setup &amp; Preview</div>
       </div>
       <div class="card-body" style="flex:1">
-
-        <!-- Config name -->
-        <div class="form-group">
-          <label class="form-label">Config Name</label>
-          <input type="text" id="sam3-config-name" class="form-control" placeholder="e.g. COCO fish detection">
-        </div>
 
         <!-- Source -->
         <div class="plugin-form-grid">
@@ -305,10 +277,10 @@
 var _sam3Labels = []; // Array of {name, color}
 var _sam3LastPreviewPath = "";
 var _sam3CreateJobId = null;
-var _sam3CurrentConfigId = null;
+var sam3Presets = null; // the SDK's preset bar (_tlcPluginPresets), once mounted
 var _sam3ComputeUrl = (PLUGIN_API.getConfig("compute_service_url") || "http://localhost:5020").replace(/\/$/, "");
 
-var _SAM3_STORAGE_KEY = "sam3_selected_config";
+var _SAM3_STORAGE_KEY = "sam3_selected_config"; // the old config bar's key; the preset bar honours it once
 
 var _sam3DefaultColors = [
   "#64c8ff", "#78ffb4", "#c8a0ff", "#ffdc78",
@@ -378,7 +350,10 @@ function sam3RenderLabels() {
     var tag = document.createElement("span"); tag.className = "plugin-label-tag";
     var ci = document.createElement("input"); ci.type = "color"; ci.className = "plugin-label-color";
     ci.value = label.color; ci.title = "Change color"; ci.setAttribute("data-idx", i);
-    ci.addEventListener("input", function() { _sam3Labels[parseInt(this.getAttribute("data-idx"))].color = this.value; });
+    ci.addEventListener("input", function() {
+      _sam3Labels[parseInt(this.getAttribute("data-idx"))].color = this.value;
+      if (sam3Presets) sam3Presets.changed();
+    });
     var ns = document.createElement("span"); ns.textContent = label.name;
     var rb = document.createElement("button"); rb.innerHTML = "&times;"; rb.title = "Remove";
     rb.setAttribute("data-idx", i);
@@ -386,6 +361,7 @@ function sam3RenderLabels() {
     tag.appendChild(ci); tag.appendChild(ns); tag.appendChild(rb); wrap.appendChild(tag);
   });
   document.getElementById("sam3-preview-btn").disabled = _sam3Labels.length === 0;
+  if (sam3Presets) sam3Presets.changed();
 }
 function sam3AddLabel() {
   var input = document.getElementById("sam3-label-input"); var val = input.value.trim();
@@ -487,8 +463,8 @@ if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
   PLUGIN_API.onRunTargetChange(sam3CheckTableAgainstRunTarget);
 }
 function sam3ReadLabels() {
-  var url = document.getElementById("sam3-table-url").value.trim(); if (!url) return;
-  _sam3Post("/api/plugins/sam3/read-labels", { table_url: url }).then(function(data) {
+  var url = document.getElementById("sam3-table-url").value.trim(); if (!url) return Promise.resolve();
+  return _sam3Post("/api/plugins/sam3/read-labels", { table_url: url }).then(function(data) {
     if (data.error) { sam3Log("Error: " + data.error); return; }
     if (data.labels && data.labels.length > 0) {
       _sam3Labels = []; _sam3ColorIndex = 0;
@@ -500,60 +476,41 @@ function sam3ReadLabels() {
   }).catch(function(e) { sam3Log("Error: " + e); });
 }
 
-// ── Configs ──────────────────────────────────────────────────
-function sam3LoadConfigs() {
-  _sam3Fetch("/api/plugins/sam3/configs").then(function(r) { return r.json(); }).then(function(data) {
-    if (data.error) return;
-    sam3RenderConfigsList(Array.isArray(data) ? data : []);
-  }).catch(function() {
-    sam3RenderConfigsList([]);
-  });
+// ── Presets: the form in and out ─────────────────────────────
+// The SDK's preset bar owns the saved setups (SDK guide → Presets); a run never saves one.
+function sam3DefaultFormData() {
+  return {
+    source_type: "folder", folder: "", table_url: "", labels: [], modality: "segmentation", confidence: 0.2,
+    project_name: "", dataset_name: "train", table_name: "initial", embedding_dim: 2, device: "cuda",
+  };
 }
-function sam3RenderConfigsList(configs) {
-  var sel = document.getElementById("sam3-config-select");
-  var currentVal = _sam3CurrentConfigId || "";
-  sel.innerHTML = '<option value="">New config</option>';
-  configs.forEach(function(c) {
-    var opt = document.createElement("option");
-    opt.value = c.id;
-    var labelCount = (c.labels || []).length;
-    opt.textContent = (c.name || "Untitled") + " — " + labelCount + " label" + (labelCount !== 1 ? "s" : "") + ", " + (c.modality || "seg");
-    if (c.id === currentVal) opt.selected = true;
-    sel.appendChild(opt);
-  });
+
+// The table the plugin was opened with (?table= or ?train=, or the action button's table). It
+// replaces the preset's source for the page's life.
+function sam3ContextInputs() {
+  var q = new URLSearchParams(window.location.search);
+  var table = q.get("table") || q.get("train") || "";
+  var ctx = (typeof PLUGIN_API !== "undefined" && PLUGIN_API.context) ? PLUGIN_API.context : {};
+  if (!table && ctx.resourceUrls && ctx.resourceUrls.length) table = ctx.resourceUrls[0];
+  return table ? { source_type: "table", folder: "", table_url: table } : null;
 }
-function sam3OnConfigSelect(val) {
-  if (val) {
-    sam3LoadConfig(val);
-  } else {
-    sam3NewConfig();
-  }
+
+// The name a new preset gets unless the person types one: "fish, person segmentation · 2026-10-27".
+function sam3AutoName(values) {
+  var d = new Date();
+  var dateStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  var names = (values.labels || []).map(function(l) { return l.name; }).filter(Boolean).slice(0, 3).join(", ");
+  return (names || "SAM3") + " " + (values.modality || "segmentation") + " \u00b7 " + dateStr;
 }
-function sam3NewConfig() {
-  _sam3CurrentConfigId = null;
-  localStorage.removeItem(_SAM3_STORAGE_KEY);
-  document.getElementById("sam3-config-select").value = "";
-  document.getElementById("sam3-config-name").value = "";
-  document.getElementById("sam3-source-type").value = "folder"; sam3SourceChanged();
-  document.getElementById("sam3-folder").value = "";
-  document.getElementById("sam3-table-url").value = "";
-  _sam3Labels = []; _sam3ColorIndex = 0; sam3RenderLabels();
-  document.getElementById("sam3-modality").value = "segmentation";
-  document.getElementById("sam3-confidence").value = "0.20";
-  document.getElementById("sam3-conf-value").textContent = "0.20";
-  document.getElementById("sam3-project-name").value = "";
-  document.getElementById("sam3-dataset-name").value = "train";
-  document.getElementById("sam3-table-name").value = "initial";
-  document.getElementById("sam3-embed-dim").value = "2";
-  document.getElementById("sam3-device").value = "cuda";
-  document.getElementById("sam3-save-btn").style.display = "none";
-  document.getElementById("sam3-delete-btn").style.display = "none";
-  sam3LoadConfigs();
+
+// What the list shows after a preset's name: "2 labels, segmentation".
+function sam3PresetSummary(values) {
+  var n = (values.labels || []).length;
+  return n + " label" + (n !== 1 ? "s" : "") + ", " + (values.modality || "seg");
 }
+
 function sam3CollectFormData() {
   return {
-    id: _sam3CurrentConfigId || "",
-    name: document.getElementById("sam3-config-name").value.trim(),
     source_type: document.getElementById("sam3-source-type").value,
     folder: document.getElementById("sam3-folder").value.trim(),
     table_url: document.getElementById("sam3-table-url").value.trim(),
@@ -567,65 +524,48 @@ function sam3CollectFormData() {
     device: document.getElementById("sam3-device").value,
   };
 }
-function sam3SaveConfig(silent) {
-  var data = sam3CollectFormData();
-  if (!data.name) { if (!silent) sam3Log("Enter a config name first"); return; }
-  _sam3Post("/api/plugins/sam3/configs", data).then(function(resp) {
-    if (resp.error) { if (!silent) sam3Log("Error: " + resp.error); return; }
-    _sam3CurrentConfigId = resp.id;
-    localStorage.setItem(_SAM3_STORAGE_KEY, resp.id);
-    document.getElementById("sam3-save-btn").style.display = "";
-    document.getElementById("sam3-delete-btn").style.display = "";
-    sam3LoadConfigs();
-    if (!silent) sam3Log("Config saved: " + resp.name);
-  }).catch(function(e) { if (!silent) sam3Log("Error: " + e); });
-}
-function sam3AutoSave() {
-  var name = document.getElementById("sam3-config-name").value.trim();
-  if (name) sam3SaveConfig(true);
-}
-function sam3LoadConfig(configId) {
-  _sam3Fetch("/api/plugins/sam3/configs/" + configId).then(function(r) { return r.json(); }).then(function(c) {
-    if (c.error) { sam3Log("Error: " + c.error); return; }
-    _sam3CurrentConfigId = c.id;
-    localStorage.setItem(_SAM3_STORAGE_KEY, c.id);
-    document.getElementById("sam3-config-name").value = c.name || "";
-    document.getElementById("sam3-source-type").value = c.source_type || "folder"; sam3SourceChanged();
-    document.getElementById("sam3-folder").value = c.folder || "";
-    document.getElementById("sam3-table-url").value = c.table_url || "";
-    sam3CheckTableAgainstRunTarget();
-    _sam3Labels = (c.labels || []).map(function(l) { return { name: l.name, color: l.color }; });
-    _sam3ColorIndex = _sam3Labels.length;
-    sam3RenderLabels();
-    document.getElementById("sam3-modality").value = c.modality || "segmentation";
-    document.getElementById("sam3-confidence").value = c.confidence || 0.2;
-    document.getElementById("sam3-conf-value").textContent = (c.confidence || 0.2).toFixed(2);
-    document.getElementById("sam3-project-name").value = c.project_name || "";
-    document.getElementById("sam3-dataset-name").value = c.dataset_name || "train";
-    document.getElementById("sam3-table-name").value = c.table_name || "initial";
-    document.getElementById("sam3-embed-dim").value = String(c.embedding_dim || 2);
-    document.getElementById("sam3-device").value = c.device || "cuda";
-    document.getElementById("sam3-save-btn").style.display = "";
-    document.getElementById("sam3-delete-btn").style.display = "";
-    document.getElementById("sam3-config-select").value = c.id;
-    _tlcSyncAliasFromForm("sam3", "sam3-project-name", "sam3-folder");
-    sam3LoadConfigs();
-  }).catch(function(e) { sam3Log("Error: " + e); });
-}
-function sam3DeleteConfig() {
-  if (!_sam3CurrentConfigId) return;
-  if (!confirm("Delete this config?")) return;
-  _sam3Post("/api/plugins/sam3/configs/" + _sam3CurrentConfigId + "/delete", {}).then(function() {
-    sam3Log("Config deleted."); sam3NewConfig();
-  }).catch(function(e) { sam3Log("Error: " + e); });
+
+// Fill the form from a preset's values. A table the plugin was opened with brings its own labels
+// when the preset has none, so the promise resolves once they are read.
+function sam3ApplyFormData(values) {
+  values = values || {};
+  document.getElementById("sam3-source-type").value = values.source_type || "folder"; sam3SourceChanged();
+  document.getElementById("sam3-folder").value = values.folder || "";
+  document.getElementById("sam3-table-url").value = values.table_url || "";
+  sam3CheckTableAgainstRunTarget();
+  _sam3Labels = (values.labels || []).map(function(l) { return { name: l.name, color: l.color }; });
+  _sam3ColorIndex = _sam3Labels.length;
+  sam3RenderLabels();
+  document.getElementById("sam3-modality").value = values.modality || "segmentation";
+  var conf = values.confidence != null ? Number(values.confidence) : 0.2;
+  document.getElementById("sam3-confidence").value = conf.toFixed(2);
+  document.getElementById("sam3-conf-value").textContent = conf.toFixed(2);
+  document.getElementById("sam3-project-name").value = values.project_name || "";
+  document.getElementById("sam3-dataset-name").value = values.dataset_name || "train";
+  document.getElementById("sam3-table-name").value = values.table_name || "initial";
+  document.getElementById("sam3-embed-dim").value = String(values.embedding_dim || 2);
+  document.getElementById("sam3-device").value = values.device || "cuda";
+  _tlcSyncAliasFromForm("sam3", "sam3-project-name", "sam3-folder");
+  if (values.source_type === "table" && values.table_url && !_sam3Labels.length) return sam3ReadLabels();
 }
 
-// Show save/delete if config name has content
-document.getElementById("sam3-config-name").addEventListener("input", function() {
-  var hasName = this.value.trim().length > 0;
-  document.getElementById("sam3-save-btn").style.display = hasName ? "" : "none";
-  document.getElementById("sam3-delete-btn").style.display = _sam3CurrentConfigId && hasName ? "" : "none";
-});
+function sam3InitPresets() {
+  sam3Presets = _tlcPluginPresets({
+    pluginId: "sam3",
+    apiPath: "/api/plugins/sam3/configs",
+    mount: "sam3-presets",
+    formRoot: "sam3-page",
+    collect: sam3CollectFormData,
+    apply: sam3ApplyFormData,
+    defaults: sam3DefaultFormData,
+    inputs: ["source_type", "folder", "table_url"],
+    contextInputs: sam3ContextInputs,
+    autoName: sam3AutoName,
+    summary: sam3PresetSummary,
+    legacyKey: _SAM3_STORAGE_KEY,
+  });
+  return sam3Presets.init();
+}
 
 // ── Viewer: zoom / pan ───────────────────────────────────────
 function _vUpdateTransform() {
@@ -720,7 +660,6 @@ function sam3RunPreview(sameImage) {
   }
   var btn = document.getElementById("sam3-preview-btn"), sameBtn = document.getElementById("sam3-preview-same-btn");
   btn.disabled = true; sameBtn.disabled = true; btn.textContent = "Checking images...";
-  sam3AutoSave();
 
   function restoreButtons() {
     btn.disabled = false; sameBtn.disabled = false; btn.textContent = "Preview Random Image";
@@ -818,7 +757,7 @@ function sam3CreateAndPredict() {
     confidence: parseFloat(document.getElementById("sam3-confidence").value),
     embedding_dim: parseInt(document.getElementById("sam3-embed-dim").value),
     device: document.getElementById("sam3-device").value,
-    config_id: _sam3CurrentConfigId || "",
+    config_id: sam3Presets ? sam3Presets.presetId() : "",  // set while the form is unchanged from a preset
     run_name: runName,
     max_images: maxImages,
   };
@@ -845,7 +784,6 @@ function sam3CreateAndPredict() {
     body.alias_source_folder = alias.alias_source_folder || folder;
   }
 
-  sam3AutoSave();
   sam3Log("Creating table & queuing prediction...");
   _sam3SubmitJob(body, "Job submitted — table will be created, then prediction runs automatically",
     "Creating table → prediction will start automatically");
@@ -997,20 +935,8 @@ _sam3SeedFromHost();
     }
   })();
 
-  var params = new URLSearchParams(window.location.search);
-  var tableParam = params.get("table") || params.get("train");
-  if (tableParam) {
-    sam3LoadConfigs();
-    document.getElementById("sam3-source-type").value = "table"; sam3SourceChanged();
-    document.getElementById("sam3-table-url").value = tableParam;
-    sam3CheckTableAgainstRunTarget();
-    setTimeout(function() { sam3ReadLabels(); }, 500);
-  } else {
-    var lastId = localStorage.getItem(_SAM3_STORAGE_KEY);
-    if (lastId) {
-      sam3LoadConfig(lastId);
-    }
-    sam3LoadConfigs();
-  }
+  // The preset bar opens the form: as it was last left in this browser, else on Default
+  // settings, with the table the plugin was opened with (sam3ContextInputs) in place of its own.
+  sam3InitPresets();
 })();
 </script>
