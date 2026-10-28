@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 import types
 from pathlib import Path
 from typing import Any
 
 import pytest
-import tomllib
 
 from tlc_plugin_sam3 import hf_token, routes
 
