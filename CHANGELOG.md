@@ -14,10 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Table URL is the Hub's table field (`<tlc-table-field>`).** Browse…, or a double-click in the empty field,
   opens Browse Tables, which opens at the field's table. The field keeps its id, so presets and `oninput=`
   work as before. The plugin needs Hub 1.2.0 (`min_frontend_version`).
-- **The Browse panel under the image folder picks a folder from the Select on its row**; a click elsewhere
-  on the row opens it, as `..` does, and files are listed dimmed and cannot be picked, so the field no
-  longer accepts a file. A double-click in the empty field opens the panel (from the SDK's data-source
-  picker).
+- **The Browse panel under the image folder is the SDK's file chooser:** a Location line, a path bar that
+  follows the browsing, a click that opens a folder, "Select this folder" for the one shown; files are
+  dimmed and cannot be picked, so the field no longer accepts a file. A double-click in the empty field
+  opens it.
 
 #### Actions that cannot run yet
 
