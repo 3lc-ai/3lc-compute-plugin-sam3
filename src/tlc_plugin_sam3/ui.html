@@ -506,7 +506,7 @@ function sam3AutoName(values) {
 // What the list shows after a preset's name: "2 labels, segmentation".
 function sam3PresetSummary(values) {
   var n = (values.labels || []).length;
-  return n + " label" + (n !== 1 ? "s" : "") + ", " + (values.modality || "seg");
+  return [n ? n + " label" + (n !== 1 ? "s" : "") : "", values.modality];
 }
 
 function sam3CollectFormData() {
