@@ -8,6 +8,9 @@
 /* Meta's mark at the cap height of the title beside it, in the text's own colour. */
 .sam3-mark { width: 26px; height: 26px; flex: none; display: inline-block; }
 .sam3-mark svg { display: block; }
+/* One line kept free under Preview and Create for why they cannot run yet, so the page does not
+   move as the reason comes and goes. */
+.sam3-why { margin-top: 6px; line-height: 1.5; min-height: 1.5em; }
 @media (max-width: 1000px) {
   .sam3-layout { grid-template-columns: 1fr; }
 }
@@ -83,18 +86,18 @@
             </select>
           </div>
           <div class="form-group" id="sam3-folder-group">
-            <label class="form-label">Folder Path</label>
+            <label class="form-label required" for="sam3-folder">Folder Path</label>
             <!-- SDK data-source widget (rendered at init): text input keeps id sam3-folder,
                  plus a Browse… panel backed by the SDK's /browse route. -->
             <div id="sam3-folder-ds"></div>
           </div>
           <div class="form-group" id="sam3-table-group" style="display:none">
-            <label class="form-label" for="sam3-table-url">Table URL</label>
+            <label class="form-label required" for="sam3-table-url">Table URL</label>
             <!-- The host's table picker, the same one YOLO, timm, rf-detr and the importer use: this
                  field was a bare box you had to paste a 3lc:// URL into (Paul, 2026-09-07). Guarded,
                  because a host that does not provide the picker still gets a usable field. -->
             <div style="display:flex;gap:6px">
-              <input type="text" id="sam3-table-url" class="form-control plugin-mono" style="flex:1"
+              <input type="text" id="sam3-table-url" class="form-control plugin-mono" style="flex:1" required
                      placeholder="Paste URL or click Browse..." oninput="sam3CheckTableAgainstRunTarget()">
               <button type="button" class="btn btn-secondary btn-sm"
                       onclick="if(typeof openTablePicker==='function')openTablePicker('sam3-table-url')">Browse</button>
@@ -107,7 +110,9 @@
 
         <!-- Labels with color -->
         <div class="form-group">
-          <label class="form-label">Labels <span class="text-muted" style="font-weight:400">(text prompts)</span></label>
+          <!-- Required until a label is added: sam3RenderLabels sets the input's `required`, so it carries
+               the Hub's red wash only while there are none. -->
+          <label class="form-label required" for="sam3-label-input">Labels <span class="text-muted" style="font-weight:400">(text prompts)</span></label>
           <div class="plugin-labels-wrap" id="sam3-labels-wrap"></div>
           <div style="display:flex;gap:6px">
             <input type="text" id="sam3-label-input" class="form-control" placeholder="e.g. fish, person, car..."
@@ -135,13 +140,13 @@
 
         <!-- Preview buttons -->
         <div style="display:flex;gap:8px;margin-top:2px">
-          <button class="btn btn-plugin" id="sam3-preview-btn" onclick="sam3RunPreview()" disabled>
-            Preview Random Image
-          </button>
+          <button class="btn btn-plugin" id="sam3-preview-btn" onclick="sam3RunPreview()" disabled
+                  aria-describedby="sam3-preview-why">Preview Random Image</button>
           <button class="btn btn-ghost btn-sm" id="sam3-preview-same-btn" onclick="sam3RunPreview(true)" style="display:none">
             Recalculate Same
           </button>
         </div>
+        <div id="sam3-preview-why" class="text-sm text-muted sam3-why"></div>
       </div>
     </div>
   </div>
@@ -188,8 +193,8 @@
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
           <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">3LC Project</label>
-            <input type="text" id="sam3-project-name" class="form-control" placeholder="MyProject">
+            <label class="form-label required" for="sam3-project-name">3LC Project</label>
+            <input type="text" id="sam3-project-name" class="form-control" placeholder="MyProject" required>
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">Dataset Name</label>
@@ -233,7 +238,9 @@
           <span id="sam3-running-text" class="text-sm" style="flex:1"></span>
           <a href="/queue" class="btn btn-ghost btn-sm" onclick="PLUGIN_API.navigate('/queue');return false;">Open Queue</a>
         </div>
-        <button class="btn btn-plugin" id="sam3-create-btn" onclick="sam3CreateAndPredict()">Create Table & Run Prediction</button>
+        <button class="btn btn-plugin" id="sam3-create-btn" onclick="sam3CreateAndPredict()" disabled
+                aria-describedby="sam3-create-why">Create Table & Run Prediction</button>
+        <div id="sam3-create-why" class="text-sm text-muted sam3-why"></div>
         <div id="sam3-create-status" class="text-sm" style="margin-top:6px"></div>
       </div>
     </div>
@@ -276,6 +283,9 @@
 // ── State ────────────────────────────────────────────────────
 var _sam3Labels = []; // Array of {name, color}
 var _sam3LastPreviewPath = "";
+var _sam3LastPreviewSource = "";  // the source _sam3LastPreviewPath was found in (_sam3SourceKey)
+var _sam3PreviewBusy = false;     // a preview is checking images, loading the model or running
+var _sam3JobBusy = false;         // a create-and-predict job is being submitted, queued or running
 var _sam3CreateJobId = null;
 var sam3Presets = null; // the SDK's preset bar (_tlcPluginPresets), once mounted
 var _sam3ComputeUrl = (PLUGIN_API.getConfig("compute_service_url") || "http://localhost:5020").replace(/\/$/, "");
@@ -360,7 +370,8 @@ function sam3RenderLabels() {
     rb.addEventListener("click", function() { sam3RemoveLabel(parseInt(this.getAttribute("data-idx"))); });
     tag.appendChild(ci); tag.appendChild(ns); tag.appendChild(rb); wrap.appendChild(tag);
   });
-  document.getElementById("sam3-preview-btn").disabled = _sam3Labels.length === 0;
+  document.getElementById("sam3-label-input").required = _sam3Labels.length === 0;
+  sam3Gate();
   if (sam3Presets) sam3Presets.changed();
 }
 function sam3AddLabel() {
@@ -546,6 +557,7 @@ function sam3ApplyFormData(values) {
   document.getElementById("sam3-embed-dim").value = String(values.embedding_dim || 2);
   document.getElementById("sam3-device").value = values.device || "cuda";
   _tlcSyncAliasFromForm("sam3", "sam3-project-name", "sam3-folder");
+  sam3Gate();
   if (values.source_type === "table" && values.table_url && !_sam3Labels.length) return sam3ReadLabels();
 }
 
@@ -640,38 +652,90 @@ function sam3ViewerSetImage(dataUrl) {
   img.src = dataUrl;
 }
 
+// ── What can run yet (PBI 19074) ─────────────────────────────
+// Preview, Recalculate Same and Create are disabled while they cannot run, and say why in their
+// tooltip; Preview's and Create's reasons also show on the line under them. Each blocker returns
+// the first thing to do, or "" when the action can run.
+function _sam3Val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ""; }
+function _sam3IsTable() { return document.getElementById("sam3-source-type").value === "table"; }
+// The images a preview reads: the table or the folder, whichever the source says.
+function _sam3SourceKey() {
+  var value = _sam3IsTable() ? _sam3Val("sam3-table-url") : _sam3Val("sam3-folder");
+  return value ? (_sam3IsTable() ? "table:" : "folder:") + value : "";
+}
+
+function sam3PreviewBlocker(sameImage) {
+  var enable = " to enable " + (sameImage ? "Recalculate Same." : "Preview Random Image.");
+  if (!_sam3Labels.length) return "Add a label" + enable;
+  if (_sam3IsTable() ? !_sam3Val("sam3-table-url") : !_sam3Val("sam3-folder")) {
+    return (_sam3IsTable() ? "Choose a table" : "Enter a folder path") + enable;
+  }
+  if (_sam3PreviewBusy) return "Wait while the preview runs" + enable;
+  // The image it recalculates belongs to the source it was found in.
+  if (sameImage && _sam3SourceKey() !== _sam3LastPreviewSource) {
+    return "Preview a random image from this " + (_sam3IsTable() ? "table" : "folder") + enable;
+  }
+  return "";
+}
+
+function sam3CreateBlocker() {
+  var enable = " to enable Create Table & Run Prediction.";
+  if (!_sam3Labels.length) return "Add a label" + enable;
+  if (!_sam3Val("sam3-project-name")) return "Enter a 3LC project" + enable;
+  if (_sam3IsTable()) {
+    if (!_sam3Val("sam3-table-url")) return "Choose a table in Setup" + enable;
+  } else {
+    if (!_sam3Val("sam3-folder")) return "Enter a folder path in Setup" + enable;
+    // The project is in cloud storage and the folder on a local disk: the alias card says so in full.
+    if (_tlcAliasLocationError("sam3")) return "Choose an image folder in cloud storage (see URL alias)" + enable;
+  }
+  if (_sam3JobBusy) return "Wait for the SAM3 job to finish" + enable;
+  return "";
+}
+
+function _sam3GateButton(id, reason, whyId) {
+  var btn = document.getElementById(id);
+  btn.disabled = !!reason;  // busy is one of the reasons
+  btn.title = reason;
+  if (whyId) document.getElementById(whyId).textContent = reason;  // the line keeps its height when empty
+}
+
+// Runs on every input and change under the page, after anything that fills the form in code, and
+// when a preview or a job starts and ends.
+function sam3Gate() {
+  _sam3GateButton("sam3-preview-btn", sam3PreviewBlocker(false), "sam3-preview-why");
+  _sam3GateButton("sam3-preview-same-btn", sam3PreviewBlocker(true));
+  _sam3GateButton("sam3-create-btn", sam3CreateBlocker(), "sam3-create-why");
+}
+
 // ── Preview ──────────────────────────────────────────────────
 function sam3RunPreview(sameImage) {
-  if (_sam3Labels.length === 0) { sam3Log("Add at least one label first"); return; }
+  if (sam3PreviewBlocker(sameImage)) { sam3Gate(); return; }
   var sourceType = document.getElementById("sam3-source-type").value;
+  var source = _sam3SourceKey();
   var body = {
     labels: _sam3LabelNames(), label_colors: _sam3LabelColors(),
     modality: document.getElementById("sam3-modality").value,
     confidence: parseFloat(document.getElementById("sam3-confidence").value),
     device: document.getElementById("sam3-device").value,
   };
-  if (sameImage && _sam3LastPreviewPath) body.image_path = _sam3LastPreviewPath;
-  if (sourceType === "folder") {
-    body.folder = document.getElementById("sam3-folder").value.trim();
-    if (!body.folder) { sam3Log("Enter a folder path"); return; }
-  } else {
-    body.table_url = document.getElementById("sam3-table-url").value.trim();
-    if (!body.table_url) { sam3Log("Enter a table URL"); return; }
-  }
+  if (sameImage) body.image_path = _sam3LastPreviewPath;
+  if (sourceType === "folder") body.folder = _sam3Val("sam3-folder");
+  else body.table_url = _sam3Val("sam3-table-url");
   var btn = document.getElementById("sam3-preview-btn"), sameBtn = document.getElementById("sam3-preview-same-btn");
-  btn.disabled = true; sameBtn.disabled = true; btn.textContent = "Checking images...";
+  _sam3PreviewBusy = true; sam3Gate(); btn.textContent = "Checking images...";
 
   function restoreButtons() {
-    btn.disabled = false; sameBtn.disabled = false; btn.textContent = "Preview Random Image";
+    _sam3PreviewBusy = false; btn.textContent = "Preview Random Image"; sam3Gate();
   }
 
   function runPreview() {
     sam3Log("Running preview...");
     btn.textContent = "Previewing...";
     _sam3Post("/api/plugins/sam3/preview", body, { timeout: 120000 }).then(function(data) {
+      if (data.error) { restoreButtons(); sam3Log("Error: " + data.error); return; }
+      _sam3LastPreviewPath = data.image_path; _sam3LastPreviewSource = source; sameBtn.style.display = "";
       restoreButtons();
-      if (data.error) { sam3Log("Error: " + data.error); return; }
-      _sam3LastPreviewPath = data.image_path; sameBtn.style.display = "";
       sam3ViewerSetImage("data:image/png;base64," + data.preview);
       document.getElementById("sam3-preview-detection-count").textContent = data.num_detections + " detection" + (data.num_detections !== 1 ? "s" : "");
       document.getElementById("sam3-viewer-footer").style.display = "";
@@ -738,12 +802,11 @@ function sam3RunPreview(sameImage) {
 
 // ── Create & Predict (combined) ─────────────────────────────
 function sam3CreateAndPredict() {
-  if (_sam3Labels.length === 0) { sam3Log("Add at least one label first"); return; }
+  if (sam3CreateBlocker()) { sam3Gate(); return; }
   var sourceType = document.getElementById("sam3-source-type").value;
   var projectName = document.getElementById("sam3-project-name").value.trim();
   var datasetName = document.getElementById("sam3-dataset-name").value.trim() || "train";
   var tableName = document.getElementById("sam3-table-name").value.trim() || "initial";
-  if (!projectName) { sam3Log("Enter a project name"); return; }
 
   var runName = document.getElementById("sam3-run-name").value.trim();
   var maxImagesEl = document.getElementById("sam3-max-images");
@@ -763,18 +826,13 @@ function sam3CreateAndPredict() {
   };
 
   if (sourceType === "table") {
-    var tableUrl = document.getElementById("sam3-table-url").value.trim();
-    if (!tableUrl) { sam3Log("Enter a table URL"); return; }
-    body.source_table_url = tableUrl;
+    body.source_table_url = _sam3Val("sam3-table-url");
   } else {
-    var folder = document.getElementById("sam3-folder").value.trim();
-    if (!folder) { sam3Log("Enter a folder path in Setup"); return; }
+    var folder = _sam3Val("sam3-folder");
     body.folder = folder;
     // Only these alias fields: sam3 never copies the data itself, so the card's alias_copy_* are not sent.
     // alias_folder is always filled in: it is the durable location the persisted alias points at,
     // while the Hub may rewrite `folder` to a copy on a GPU node for this run.
-    var aliasError = _tlcAliasLocationError("sam3");
-    if (aliasError) { sam3Log(aliasError); return; }
     var alias = _tlcGetAliasValues("sam3");
     body.alias_enabled = alias.alias_enabled;
     body.alias_token = alias.alias_token;
@@ -818,13 +876,13 @@ function _sam3SetRunning(job, text) {
   document.getElementById("sam3-running-banner").style.display = "flex";
   document.getElementById("sam3-running-text").textContent = text ||
     ((job.title || "SAM3 job") + (job.subtitle ? " — " + job.subtitle : "") + ". Watch it in the Queue.");
-  document.getElementById("sam3-create-btn").disabled = true;
+  _sam3JobBusy = true; sam3Gate();
   document.getElementById("sam3-project-link-a").style.display = "none";
 }
 function _sam3SetIdle() {
   _sam3CreateJobId = null;
   document.getElementById("sam3-running-banner").style.display = "none";
-  document.getElementById("sam3-create-btn").disabled = false;
+  _sam3JobBusy = false; sam3Gate();
   if (_sam3Untrack) { _sam3Untrack(); _sam3Untrack = null; }
 }
 function _sam3OnJobUpdate(job) {
@@ -870,6 +928,7 @@ function _sam3SubmitJob(body, logMsg, statusMsg) {
   if (!window.PluginJobs) { sam3Log("Error: job tracker unavailable — reload the page"); return; }
   _sam3CreateJobId = null;
   _sam3RenderClassStats(null);
+  _sam3JobBusy = true; sam3Gate();  // until the job ends; a refused start ends it in onError
   PluginJobs.run("sam3", body, _sam3JobHandlers).then(function(resp) {
     if (!resp || resp.error || !resp.job_id) return;   // onError already reported it
     sam3Log(logMsg + ": " + resp.job_id);
@@ -877,7 +936,7 @@ function _sam3SubmitJob(body, logMsg, statusMsg) {
     if (_sam3LastTerminalJobId === resp.job_id) return;
     _sam3SetRunning({ id: resp.job_id, title: "SAM3", subtitle: "queued" });
     document.getElementById("sam3-create-status").textContent = statusMsg;
-  }).catch(function(e) { sam3Log("Error: " + (e && e.message ? e.message : e)); });
+  }).catch(function(e) { sam3Log("Error: " + (e && e.message ? e.message : e)); _sam3SetIdle(); });
 }
 
 // Seed-on-mount: re-attach to a sam3 job that is already queued/running.
@@ -917,6 +976,7 @@ _sam3SeedFromHost();
     var ds = document.getElementById("sam3-folder-ds");
     if (ds) {
       ds.innerHTML = _tlcDataSourceHtml("sam3-folder", { placeholder: "/path/to/images", mode: "folder" });
+      document.getElementById("sam3-folder").required = true;
       _tlcBindDataSource("sam3-folder", _sam3ComputeUrl, "sam3", { mode: "folder" });
     }
   })();
@@ -932,8 +992,16 @@ _sam3SeedFromHost();
       // node is the Hub's run dialog's job. (Newer SDKs make the offer opt-in; this keeps older
       // ones from showing it.)
       _tlcBindAliasAutoUpdate("sam3", "sam3-project-name", "sam3-folder", "", "", { copyOffer: false });
+      // The project root arrives later and decides whether a local folder may be aliased.
+      _tlcDefaultProjectRoot().then(sam3Gate);
     }
   })();
+
+  // What can run yet: typing, picking and Browse all end in input or change events under the page.
+  var page = document.getElementById("sam3-page");
+  page.addEventListener("input", sam3Gate);
+  page.addEventListener("change", sam3Gate);
+  sam3Gate();
 
   // The preset bar opens the form: as it was last left in this browser, else on Default
   // settings, with the table the plugin was opened with (sam3ContextInputs) in place of its own.

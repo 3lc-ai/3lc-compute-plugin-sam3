@@ -45,3 +45,15 @@ def test_the_table_source_is_checked_against_the_run_target_on_bridges_that_can(
 def test_a_folder_run_sends_the_picked_folder_beside_the_alias_folder() -> None:
     # The Hub may rewrite `folder`; the picked folder lets the run keep subfolders under a parent alias.
     assert "body.alias_source_folder = alias.alias_source_folder || folder;" in UI
+
+
+def test_only_the_gate_enables_preview_and_create() -> None:
+    # PBI 19074: the buttons are enabled only by sam3Gate, which knows why they cannot run. A preview's
+    # end re-enabled Preview with no labels left, and a label added mid-preview re-enabled it.
+    assert not re.search(r"\.disabled\s*=\s*(true|false)", UI)
+    assert "if (sam3PreviewBlocker(sameImage)) { sam3Gate(); return; }" in _function("sam3RunPreview")
+    assert "if (sam3CreateBlocker()) { sam3Gate(); return; }" in _function("sam3CreateAndPredict")
+
+
+def test_recalculate_same_needs_a_preview_of_the_current_source() -> None:
+    assert "_sam3SourceKey() !== _sam3LastPreviewSource" in _function("sam3PreviewBlocker")

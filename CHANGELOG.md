@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Actions that cannot run yet
+
+- **Preview and Create wait for what they need, and say so.** Preview Random Image stays disabled
+  until there is a label and a folder or table to read. Create Table & Run Prediction also needs a
+  3LC project, and, while the project is in cloud storage, an image folder there rather than on a
+  local disk. The line under each button and its tooltip name the first thing missing ("Add a label
+  to enable Preview Random Image."). Preview was disabled without saying why, and both buttons
+  otherwise wrote what was missing to the log only once clicked.
+- **A running preview or job says so too.** While a preview runs, Preview and Recalculate Same say
+  "Wait while the preview runs …"; from the click on Create until its job ends, Create says "Wait
+  for the SAM3 job to finish …".
+- **The form uses the Hub's field style.** Folder Path (or Table URL), Labels and 3LC Project are
+  marked required: a red * on the label, and a red wash while the field is empty; for Labels, until
+  a label is added.
+
 #### Presets
 
 - **The Config bar is the SDK's preset bar.** One line at the top of the page: a select with Default
@@ -112,6 +127,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Other changes
 
+- **Preview stays disabled while a preview runs.** Adding or removing a label re-enabled it
+  mid-preview.
+- **A preview's end no longer re-enables Preview with no labels left.**
+- **Recalculate Same recalculates only an image of the current source.** After the folder or table
+  changed, it sent the previous source's image. It is now disabled until the new source has been
+  previewed ("Preview a random image from this folder to enable Recalculate Same.").
+- **Create cannot start a second job with a second click.** It stayed enabled until the run
+  answered.
 - The legacy token file is found again with an SDK that resolves its config root when a store
   is built (`config_store.config_root()`; `CONFIG_ROOT` is now only an override, `None` by
   default). A worker with no home directory reads no legacy token instead of failing the job.
