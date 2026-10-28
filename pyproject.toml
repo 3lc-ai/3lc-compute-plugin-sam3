@@ -16,7 +16,7 @@ name = "3lc-compute-plugin-sam3"
 version = "0.2.6"
 description = "SAM3 auto-label plugin for the 3LC compute service."
 readme = "README-wheel.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 # Apache-2.0: SAM lineage is Apache-2.0 and the other deps (torch/torchvision/umap-learn) are
 # permissive — no copyleft obligation. The SAM3 model WEIGHTS carry their own license, pulled at
 # runtime (separate from this code). Full text in ./LICENSE.
@@ -95,7 +95,7 @@ torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sy
 # linting must not require resolving the heavy ML stack.
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 exclude = [".git", ".mypy_cache", ".ruff_cache", ".venv", "build", "dist"]
 
 [tool.ruff.lint]

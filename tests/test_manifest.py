@@ -5,12 +5,8 @@
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
-
-import pytest
-
-# tomllib is 3.11+; the package still supports 3.10, where this check is skipped.
-tomllib = pytest.importorskip("tomllib")
 
 PACKAGE = Path(__file__).resolve().parents[1] / "src" / "tlc_plugin_sam3"
 RUNTIME = tomllib.loads((PACKAGE / "plugin.toml").read_text(encoding="utf-8"))["runtime"]
