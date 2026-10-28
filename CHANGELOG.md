@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Presets
+
+- **The Config bar is the SDK's preset bar.** One line at the top of the page: a select with Default
+  settings and the saved presets (labels, modality and age in the label), Save as… that opens a
+  prefilled name field in the bar, and a trash icon that asks in the bar. The entry the form came
+  from gains "· modified" once the form differs; picking it again reverts. A preset is a template of
+  the whole form, source included: picking one fills the form, only Save writes one, and **the form
+  no longer saves itself** as you type or when a preview or a run starts, so a setup kept as a
+  reference stays as it was. The "Config Name" field and "+ New", "Save New" and "Delete" are gone
+  with the bar. Saved configs appear as presets as they are; the config the old bar remembered opens
+  once more, then the page opens as it was last left in this browser.
+- **Opened from a table**, the table is the source (the preset's folder is set aside) and stays
+  while the page is open, also when another preset is picked. Its labels are read when the preset
+  has none.
+- The run body's `config_id` is set only while the form is unchanged from a preset. Requires SDK
+  0.5.5.
+
 #### Data movement
 
 - The folder alias card is hidden for table inputs, whose aliases already belong to their source project.
