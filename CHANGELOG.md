@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Segmentation prediction retains compact RLE masks rather than every image's full-resolution masks.
+  Per-image prediction tensors and backbone state are released before the next image; labels,
+  confidence scores and reduced instance embeddings keep their existing metrics format.
+
 ### Changed
 
 - Accepts plugin SDK 0.6 (`3lc-compute-plugin-sdk<0.7.0`), so the plugin's workers get SDK 0.6's
