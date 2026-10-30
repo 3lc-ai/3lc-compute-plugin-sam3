@@ -144,6 +144,25 @@ def _log(ctx: JobContext, msg: str) -> None:
     ctx.log(msg)
 
 
+def _encode_segmentations(preds: dict[str, Any], image_size: tuple[int, int]) -> dict[str, Any]:
+    """Encode one image's masks before retaining its prediction for metrics collection."""
+    import numpy as np
+    import tlc
+
+    width, height = image_size
+    masks = preds["masks"]
+    stacked = (
+        np.stack(masks, axis=-1).astype(np.uint8, copy=False) if masks else np.empty((height, width, 0), dtype=np.uint8)
+    )
+    return tlc.data_types.SegmentationMasks(
+        masks=stacked,
+        labels=np.asarray(preds["labels"], dtype=np.int32),
+        confidences=np.asarray(preds["scores"], dtype=np.float32),
+        image_width=width,
+        image_height=height,
+    ).to_row()
+
+
 def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None = None) -> None:
     """Run SAM3 prediction on a 3LC table.
 
@@ -233,14 +252,15 @@ def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None =
 
         # Image embedding
         img_emb = get_image_embedding(state)
-        all_image_embeddings.append(img_emb)
+        # Retain only the small vectors, even when the inference implementation returns views.
+        all_image_embeddings.append(img_emb.copy())
 
         # Instance embeddings
         if modality == "bbox":
             inst_emb = get_box_embeddings(state, preds["boxes"], image.size)
         else:
             inst_emb = get_instance_embeddings(state, preds["masks_tensor"])
-        all_instance_embeddings.append(inst_emb)
+        all_instance_embeddings.append(inst_emb.copy())
 
         # Build prediction data in 3LC format
         if modality == "bbox":
@@ -258,21 +278,8 @@ def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None =
                 )
             )
         else:
-            masks_np = preds["masks"]
-            if masks_np:
-                stacked = np.stack(masks_np, axis=-1).astype(np.uint8)  # (H, W, N)
-            else:
-                stacked = np.empty((image.height, image.width, 0), dtype=np.uint8)
-
-            all_predictions.append(
-                tlc.data_types.SegmentationMasks(
-                    masks=stacked,
-                    labels=np.asarray(preds["labels"], dtype=np.int32),
-                    confidences=np.asarray(preds["scores"], dtype=np.float32),
-                    image_width=image.width,
-                    image_height=image.height,
-                )
-            )
+            # Store RLE rows, never the full-resolution H x W x N arrays across images.
+            all_predictions.append(_encode_segmentations(preds, image.size))
 
         # Per-class counts
         for lbl_idx in preds["labels"]:
@@ -309,6 +316,9 @@ def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None =
                 "class_avg": class_avg,
             },
         )
+
+        # The next prediction must not overlap the previous image's masks, tensors or backbone state.
+        del image, preds, state, img_emb, inst_emb
 
     if ctx.cancelled:
         run.set_status_cancelled()
@@ -353,15 +363,14 @@ def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None =
             else:
                 reduced_arr = np.empty((0, embedding_dim), dtype=np.float32)
             all_instance_emb_reduced.append(reduced_arr.tolist())
-            # For segmentation, embed inside the SegmentationMasks per_instance_extras
+            # Add the reduced vectors directly to the encoded row; decoding would recreate dense masks.
             if modality != "bbox":
-                all_predictions[idx].per_instance_extras["instance_embedding"] = reduced_arr
+                all_predictions[idx][tlc.constants.INSTANCE_PROPERTIES]["instance_embedding"] = reduced_arr.tolist()
     else:
-        empty_arr = np.empty((0, embedding_dim), dtype=np.float32)
         for idx in range(len(all_predictions)):
             all_instance_emb_reduced.append([])
             if modality != "bbox":
-                all_predictions[idx].per_instance_extras["instance_embedding"] = empty_arr
+                all_predictions[idx][tlc.constants.INSTANCE_PROPERTIES]["instance_embedding"] = []
 
     # Write metrics to 3LC run
     _log(ctx, "Writing metrics to 3LC run...")
