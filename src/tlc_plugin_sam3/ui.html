@@ -3,12 +3,16 @@
 <style>
 /* ── SAM3-specific styles ── */
 .sam3-layout {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px;
+}
+.sam3-layout > div { min-width: 0; }
+@container plugin-workbench (min-width: 1450px) {
+  .sam3-layout { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
 }
 /* One line kept free under Preview and Create for why they cannot run yet, so the page does not
    move as the reason comes and goes. */
 .sam3-why { margin-top: 6px; line-height: 1.5; min-height: 1.5em; }
-@media (max-width: 1000px) {
+@container plugin-workbench (max-width: 1000px) {
   .sam3-layout { grid-template-columns: 1fr; }
 }
 </style>
@@ -199,7 +203,7 @@
           <a href="/queue" class="btn btn-ghost btn-sm" onclick="PLUGIN_API.navigate('/queue');return false;">Open Queue</a>
         </div>
         <button class="btn btn-plugin" id="sam3-create-btn" onclick="sam3CreateAndPredict()" disabled
-                aria-describedby="sam3-create-why">Output &amp; labeling</button>
+                aria-describedby="sam3-create-why">Create table &amp; label images</button>
         <div id="sam3-create-why" class="text-sm text-muted sam3-why"></div>
         <div id="sam3-create-status" class="text-sm" style="margin-top:6px"></div>
       </div>
