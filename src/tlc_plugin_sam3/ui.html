@@ -3,58 +3,26 @@
 <style>
 /* ── SAM3-specific styles ── */
 .sam3-layout {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px;
 }
-/* Meta's mark at the cap height of the title beside it, in the text's own colour. */
-.sam3-mark { width: 26px; height: 26px; flex: none; display: inline-block; }
-.sam3-mark svg { display: block; }
+.sam3-layout > div { min-width: 0; }
+@container plugin-workbench (min-width: 1450px) {
+  .sam3-layout { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
+}
 /* One line kept free under Preview and Create for why they cannot run yet, so the page does not
    move as the reason comes and goes. */
 .sam3-why { margin-top: 6px; line-height: 1.5; min-height: 1.5em; }
-@media (max-width: 1000px) {
+@container plugin-workbench (max-width: 1000px) {
   .sam3-layout { grid-template-columns: 1fr; }
 }
 </style>
 
-<div class="plugin-page" id="sam3-page">
-<!-- ── Hero ───────────────────────────────────────────────── -->
-<div class="plugin-hero" style="padding:20px 24px">
-      <h2 style="margin-bottom:6px;display:flex;align-items:center;gap:10px"><span class="sam3-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor" aria-hidden="true"><path d="M6.915 4.03c-1.968 0-3.683 1.28-4.871 3.113C.704 9.208 0 11.883 0 14.449c0 .706.07 1.369.21 1.973a6.624 6.624 0 0 0 .265.86 5.297 5.297 0 0 0 .371.761c.696 1.159 1.818 1.927 3.593 1.927 1.497 0 2.633-.671 3.965-2.444.76-1.012 1.144-1.626 2.663-4.32l.756-1.339.186-.325c.061.1.121.196.183.3l2.152 3.595c.724 1.21 1.665 2.556 2.47 3.314 1.046.987 1.992 1.22 3.06 1.22 1.075 0 1.876-.355 2.455-.843a3.743 3.743 0 0 0 .81-.973c.542-.939.861-2.127.861-3.745 0-2.72-.681-5.357-2.084-7.45-1.282-1.912-2.957-2.93-4.716-2.93-1.047 0-2.088.467-3.053 1.308-.652.57-1.257 1.29-1.82 2.05-.69-.875-1.335-1.547-1.958-2.056-1.182-.966-2.315-1.303-3.454-1.303zm10.16 2.053c1.147 0 2.188.758 2.992 1.999 1.132 1.748 1.647 4.195 1.647 6.4 0 1.548-.368 2.9-1.839 2.9-.58 0-1.027-.23-1.664-1.004-.496-.601-1.343-1.878-2.832-4.358l-.617-1.028a44.908 44.908 0 0 0-1.255-1.98c.07-.109.141-.224.211-.327 1.12-1.667 2.118-2.602 3.358-2.602zm-10.201.553c1.265 0 2.058.791 2.675 1.446.307.327.737.871 1.234 1.579l-1.02 1.566c-.757 1.163-1.882 3.017-2.837 4.338-1.191 1.649-1.81 1.817-2.486 1.817-.524 0-1.038-.237-1.383-.794-.263-.426-.464-1.13-.464-2.046 0-2.221.63-4.535 1.66-6.088.454-.687.964-1.226 1.533-1.533a2.264 2.264 0 0 1 1.088-.285z"/></svg></span>SAM3 Auto-Labeling</h2>
-      <p style="font-size:13px;color:var(--text);line-height:1.7;margin:0 0 12px">
-        Auto-label thousands of images in minutes using Meta's <strong>Segment Anything 3</strong> with plain-text prompts.
-        3LC captures <strong>image and instance embeddings</strong> during prediction &mdash; explore the embedding space
-        in the Dashboard to <strong>catch mislabeled samples</strong>, <strong>strip out near-duplicate frames</strong>
-        that would hurt model generalization, and <strong>remove low-confidence predictions</strong> before they
-        pollute your training set. Accept only the right data with just a <em>touch</em> of human-in-the-loop
-        review &mdash; train better models with less data and zero surprises.
-      </p>
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px">
-    <div class="plugin-hero-badge plugin-hero-badge-card">
-      <div style="margin-bottom:3px;opacity:0.6"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6"/><path d="M10 2v4M10 14v4M2 10h4M14 10h4"/></svg></div>
-      <div style="font-size:11px;font-weight:600;color:var(--text)">Auto-label</div>
-      <div style="font-size:10px;color:var(--text-muted);line-height:1.4;margin-top:2px">SAM3 predicts masks and bounding boxes for every image from your text prompts alone</div>
-    </div>
-    <div class="plugin-hero-badge plugin-hero-badge-card">
-      <div style="margin-bottom:3px;opacity:0.6"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="5"/><path d="M13 13l4 4"/></svg></div>
-      <div style="font-size:11px;font-weight:600;color:var(--text)">Inspect embeddings</div>
-      <div style="font-size:10px;color:var(--text-muted);line-height:1.4;margin-top:2px">Explore image and instance embedding space to verify quality and catch outliers</div>
-    </div>
-    <div class="plugin-hero-badge plugin-hero-badge-card">
-      <div style="margin-bottom:3px;opacity:0.6"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="14" r="3"/><path d="M17 3L8.5 8.5M17 17l-8.5-5.5"/></svg></div>
-      <div style="font-size:11px;font-weight:600;color:var(--text)">Cut redundancy</div>
-      <div style="font-size:10px;color:var(--text-muted);line-height:1.4;margin-top:2px">Strip duplicates and near-similar frames &mdash; keep only the data that improves the model</div>
-    </div>
-    <div class="plugin-hero-badge plugin-hero-badge-card">
-      <div style="margin-bottom:3px;opacity:0.6"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v14M6 6l4-4 4 4"/><path d="M5 18h10"/></svg></div>
-      <div style="font-size:11px;font-weight:600;color:var(--text)">Train smarter</div>
-      <div style="font-size:10px;color:var(--text-muted);line-height:1.4;margin-top:2px">Zero-weight start &mdash; accept what you trust, skip the rest, get the best model with the least data</div>
-    </div>
-  </div>
-  <div class="plugin-workflow" style="margin-top:10px">
-    <div class="plugin-workflow-step"><span class="num">1</span> Setup & preview</div>
-    <div class="plugin-workflow-step"><span class="num">2</span> Create table & run prediction</div>
-  </div>
-</div>
+<div class="plugin-page plugin-workbench" id="sam3-page">
+<!-- Workflow heading -->
+<header class="plugin-page-heading">
+  <h1>SAM3</h1>
+  <p>Preview labels on an image, then apply them to your dataset.</p>
+</header>
 
 <!-- ── Hugging Face token: a Connection the Hub keeps ────────── -->
 <div class="plugin-info-banner" id="sam3-hf-card">
@@ -72,7 +40,7 @@
   <div>
     <div class="card" style="height:100%;display:flex;flex-direction:column">
       <div class="card-header">
-        <div class="card-title" style="font-size:13px"><span class="plugin-section-number">1</span> Setup &amp; Preview</div>
+        <div class="card-title" style="font-size:13px"><span class="plugin-section-number">1</span> Data &amp; prompts</div>
       </div>
       <div class="card-body" style="flex:1">
 
@@ -102,7 +70,7 @@
             <div id="sam3-run-target-data-note" class="form-help" style="display:none"></div>
           </div>
         </div>
-        <div class="form-help">Point to an image folder or existing 3LC table. SAM3 will process every image in the source.</div>
+        <div class="form-help">Labeling processes every image in the selected source.</div>
 
         <!-- Labels with color -->
         <div class="form-group">
@@ -115,7 +83,7 @@
               style="flex:1" onkeydown="if(event.key==='Enter'){sam3AddLabel();event.preventDefault();}">
             <button class="btn btn-ghost btn-sm" onclick="sam3AddLabel()">Add</button>
           </div>
-          <div class="form-help">Define the object classes you want to detect. Use descriptive text prompts that SAM3 can understand (e.g. "fish", "person walking").</div>
+          <div class="form-help">Add a name or short description for each object class, such as “fish” or “person walking”.</div>
         </div>
 
         <!-- Modality + Confidence -->
@@ -181,13 +149,13 @@
     <!-- Create Table & Run Prediction -->
     <div class="card mb-16">
       <div class="card-header">
-        <div class="card-title" style="font-size:12px"><span class="plugin-section-number">2</span> Create Table & Run Prediction</div>
+        <div class="card-title" style="font-size:12px"><span class="plugin-section-number">2</span> Output &amp; labeling</div>
       </div>
       <div class="card-body">
         <p class="text-sm text-muted" style="margin-bottom:10px">
           Creates a 3LC table from the images, then automatically runs SAM3 prediction on all samples with UMAP embeddings.
         </p>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px">
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label required" for="sam3-project-name">3LC Project</label>
             <input type="text" id="sam3-project-name" class="form-control" placeholder="MyProject" required>
@@ -207,7 +175,7 @@
         </div>
         <!-- URL Alias settings (injected by shared JS) -->
         <div id="sam3-alias-area"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:10px;margin-top:8px">
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">Max Images</label>
             <input type="number" id="sam3-max-images" class="form-control" placeholder="All images" min="1">
@@ -235,7 +203,7 @@
           <a href="/queue" class="btn btn-ghost btn-sm" onclick="PLUGIN_API.navigate('/queue');return false;">Open Queue</a>
         </div>
         <button class="btn btn-plugin" id="sam3-create-btn" onclick="sam3CreateAndPredict()" disabled
-                aria-describedby="sam3-create-why">Create Table & Run Prediction</button>
+                aria-describedby="sam3-create-why">Create table &amp; label images</button>
         <div id="sam3-create-why" class="text-sm text-muted sam3-why"></div>
         <div id="sam3-create-status" class="text-sm" style="margin-top:6px"></div>
       </div>
