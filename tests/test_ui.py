@@ -70,3 +70,9 @@ def test_only_the_gate_enables_preview_and_create() -> None:
 
 def test_recalculate_same_needs_a_preview_of_the_current_source() -> None:
     assert "_sam3SourceKey() !== _sam3LastPreviewSource" in _function("sam3PreviewBlocker")
+
+
+def test_the_token_chooser_is_shown() -> None:
+    # The frame always has API.credentials, so nothing reveals the button later: it starts visible.
+    button = re.search(r'<button[^>]*id="sam3-hf-choose-btn"[^>]*>', UI)
+    assert button and "display:none" not in button.group(0)
