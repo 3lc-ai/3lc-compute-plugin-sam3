@@ -76,3 +76,9 @@ def test_the_token_chooser_is_shown() -> None:
     # The frame always has API.credentials, so nothing reveals the button later: it starts visible.
     button = re.search(r'<button[^>]*id="sam3-hf-choose-btn"[^>]*>', UI)
     assert button and "display:none" not in button.group(0)
+
+
+def test_a_hub_without_the_frame_is_told_before_anything_starts() -> None:
+    # A Hub showing plugin pages inline has no PLUGIN_API.protocol: the page says so instead of failing midway.
+    guard = UI.index("if (!API || !API.protocol)")
+    assert guard < UI.index("API.getConfig(") and guard < UI.index("API.credentials")

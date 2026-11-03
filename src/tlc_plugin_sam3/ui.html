@@ -254,6 +254,13 @@ var _sam3JobBusy = false;         // a create-and-predict job is being submitted
 var _sam3CreateJobId = null;
 var sam3Presets = null; // the SDK's preset bar (_tlcPluginPresets), once mounted
 var API = window.PLUGIN_API;
+// This page runs in the Hub's isolated plugin frame (PLUGIN_API.protocol); a Hub that shows plugin pages inline
+// has none of its namespaced calls, so say so rather than fail halfway through starting.
+if (!API || !API.protocol) {
+  document.getElementById("sam3-page").textContent =
+    "SAM3 needs a newer 3LC Hub, one that opens plugin pages in their own frame. Update the Hub, or install SAM3 0.2.";
+  throw new Error("SAM3 needs the isolated plugin frame (PLUGIN_API.protocol)");
+}
 var _sam3ComputeUrl = API.getConfig("compute_service_url").replace(/\/$/, "");
 
 var _SAM3_STORAGE_KEY = "sam3_selected_config"; // the old config bar's key; the preset bar honours it once
@@ -275,7 +282,7 @@ var _vNatW = 0, _vNatH = 0;
 function _sam3Esc(s) {
   var el = document.createElement("span"); el.textContent = s || ""; return el.innerHTML;
 }
-function _sam3Fetch(path, opts) { return API.compute.request(path, opts); }
+function _sam3Fetch(path, opts) { return API.http.request(path, opts); }
 function _sam3Post(path, body, opts) {
   var fetchOpts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   if (opts && opts.timeout) fetchOpts.timeout = opts.timeout;

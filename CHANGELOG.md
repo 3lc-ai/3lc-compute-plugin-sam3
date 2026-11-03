@@ -10,10 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **The page runs in the Hub's isolated plugin frame.** It uses the frame's namespaced API
-  (`API.compute.request`, `API.jobs`, `API.credentials`, `API.nav`, `API.run.checkTable`) instead of
+  (`API.http.request`, `API.jobs`, `API.credentials`, `API.nav`, `API.run.checkTable`) instead of
   the flat aliases and the injected `PluginJobs`, and registers its listeners for cleanup when the
   page is left (running jobs carry on). The Open link after a run goes through the Hub's navigation.
-  The plugin needs compute 1.2.0 (`min_service_version`), which serves that frame.
+  On a Hub that still shows plugin pages inline, the page says it needs a newer Hub instead of
+  failing as it starts.
 - **The Hugging Face token is read by service** (`current_credential("huggingface")`), so a job that
   also carries another service's token still finds it.
 - **The manifest says what the token needs:** read access, from an account that has accepted SAM 3's
