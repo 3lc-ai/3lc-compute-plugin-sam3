@@ -1,11 +1,10 @@
 # Copyright 2026 3LC Inc.
 # SPDX-License-Identifier: Apache-2.0
-"""Where the Hugging Face token comes from: the chosen Connection, the worker's own, the legacy file.
+"""Where the Hugging Face token comes from: the chosen Connection, else the worker's own.
 
 The token is a SECRET Connection the person chooses in the Hub. The host grants it to jobs and to
 the routes the manifest lists under ``credential_routes``; the SDK binds it, and the model download
-receives it explicitly. The token file the retired ``/set-hf-token`` wrote is read for one release
-when nothing else is there, and never written.
+receives it explicitly. The token file the retired ``/set-hf-token`` wrote is no longer read.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ import tomllib
 from tlc_plugin_sam3 import hf_token, routes
 
 SECRET = "hf_" + "c" * 34
-LEGACY = "hf_" + "l" * 34
+LEGACY = "hf_" + "l" * 34  # what the retired /set-hf-token route wrote
 MANIFEST = Path(__file__).resolve().parent.parent / "src" / "tlc_plugin_sam3" / "plugin.toml"
 
 
@@ -52,20 +51,12 @@ def test_nothing_anywhere_is_none(config_root: Path) -> None:
     assert hf_token.resolve() == ("", "none")
 
 
-def test_the_legacy_file_is_read_when_nothing_else_is_there(config_root: Path) -> None:
+def test_the_legacy_file_is_not_read(config_root: Path) -> None:
     _write_legacy(config_root)
-    assert hf_token.resolve() == (LEGACY, "legacy-file")
-    assert hf_token.source() == "legacy-file"
-
-
-def test_a_broken_legacy_file_is_no_token(config_root: Path) -> None:
-    (config_root / "sam3").mkdir()
-    (config_root / "sam3" / "hf-token.json").write_text("not json")
     assert hf_token.resolve() == ("", "none")
 
 
-def test_the_worker_s_own_token_wins_over_the_legacy_file(config_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write_legacy(config_root)
+def test_the_worker_s_own_token_is_the_fallback(config_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(hf_token, "_WORKER_TOKEN", "hf_operator")
     assert hf_token.resolve() == ("hf_operator", "environment")
 
@@ -79,7 +70,6 @@ def test_hf_token_set_later_in_the_process_is_not_the_worker_s(
 
 
 def test_the_chosen_connection_wins(config_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write_legacy(config_root)
     monkeypatch.setattr(hf_token, "_WORKER_TOKEN", "hf_operator")
     with _bound():
         assert hf_token.resolve() == (SECRET, "connection")
@@ -93,7 +83,9 @@ def test_a_connection_for_another_service_is_not_a_hugging_face_token(config_roo
 
 def test_the_manifest_declares_the_service_and_the_routes_that_download() -> None:
     runtime = tomllib.loads(MANIFEST.read_text())["runtime"]
-    assert runtime["credentials"] == [{"service": hf_token.SERVICE, "required": True}]
+    [credential] = runtime["credentials"]
+    assert (credential["service"], credential["required"]) == (hf_token.SERVICE, True)
+    assert "license" in credential["value_hint"], "the hint says the model is gated"
     assert runtime["credential_routes"] == ["/preview", "/model-warmup", "/model-status"]
     paths = {path for handler in routes.get_route_handlers() for path in handler.paths}
     assert set(runtime["credential_routes"]) <= paths, "every credential route exists"
@@ -166,8 +158,8 @@ def test_model_status_says_where_the_token_comes_from(config_root: Path, monkeyp
     handler = next(h for h in routes.get_route_handlers() if "/model-status" in h.paths)
     fn = handler.fn
     assert fn()["hf_token"] == "none"
-    _write_legacy(config_root)
-    assert fn()["hf_token"] == "legacy-file"
+    monkeypatch.setattr(hf_token, "_WORKER_TOKEN", LEGACY)
+    assert fn()["hf_token"] == "environment"
     assert LEGACY not in json.dumps(fn()), "never the token itself"
 
 

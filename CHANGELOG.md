@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Releases as 0.3.0: its page needs the isolated plugin frame (`[ui] frame_protocol = 1`) and
+SDK 0.7.
+
+### Changed
+
+- **The page runs in the Hub's isolated plugin frame.** It uses the frame's namespaced API
+  (`API.http.request`, `API.jobs`, `API.credentials`, `API.nav`, `API.run.checkTable`) instead of
+  the flat aliases and the injected `PluginJobs`, and registers its listeners for cleanup when the
+  page is left (running jobs carry on). The Open link after a run goes through the Hub's navigation.
+  On a Hub that still shows plugin pages inline, the page says it needs a newer Hub instead of
+  failing as it starts.
+- **The Hugging Face token is read by service** (`current_credential("huggingface")`), so a job that
+  also carries another service's token still finds it.
+- **The manifest says what the token needs:** read access, from an account that has accepted SAM 3's
+  license.
+
+### Removed
+
+- **The legacy token file** (`hf-token.json`, written by the retired `/set-hf-token`) is no longer
+  read. Choose a Hugging Face Connection on the SAM3 page; the worker's own `HF_TOKEN` is still the
+  fallback.
+
 ### Fixed
 
 - Segmentation prediction retains compact RLE masks rather than every image's full-resolution masks.

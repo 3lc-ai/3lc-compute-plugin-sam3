@@ -76,12 +76,7 @@ class SAM3Plugin(ComputePlugin):
                 mode-specific request fields.
 
         """
-        from tlc_plugin_sam3.hf_token import source
-
         params = ctx.params
-        # The model download reads the job's token itself (hf_token.resolve); only the legacy file is called out.
-        if source() == "legacy-file":
-            _log(ctx, "Hugging Face token: using the legacy token file — choose a Connection on the SAM3 page")
         mode = str(params.get("mode", "predict") or "predict")
         config_id = (str(params.get("config_id", "") or "").strip()) or None
         # The root the host stamped for this job; None (an SDK without the property) keeps tlc's default.

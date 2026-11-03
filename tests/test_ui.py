@@ -34,12 +34,25 @@ def test_the_preview_checks_the_source_before_warming_the_model() -> None:
     assert preview.count("_sam3EnsureHfToken()") == 1
 
 
-def test_the_table_source_is_checked_against_the_run_target_on_bridges_that_can() -> None:
-    check = _function("sam3CheckTableAgainstRunTarget")
-    assert 'typeof PLUGIN_API.checkDataForRunTarget !== "function"' in check
-    assert "PLUGIN_API.hostChecksTableInputs" in check
-    assert 'typeof PLUGIN_API.onRunTargetChange === "function"' in UI
-    assert "PLUGIN_API.onRunTargetChange(sam3CheckTableAgainstRunTarget)" in UI
+def test_the_table_source_is_checked_against_the_run_target() -> None:
+    assert "API.run.checkTable(url)" in _function("sam3CheckTableAgainstRunTarget")
+    assert "API.lifecycle.onDispose(API.onRunTargetChange(sam3CheckTableAgainstRunTarget))" in UI
+
+
+def test_the_page_uses_only_the_frame_s_namespaced_api() -> None:
+    # The page runs in the Hub's isolated frame: the flat aliases, the injected PluginJobs global and
+    # the Hub's own globals are migration shims or absent there.
+    for old in (
+        "PluginJobs",
+        "authFetch",
+        "chooseCredential",
+        "PLUGIN_API.credential(",
+        "navigate(",
+        "TlcApi",
+        "TlcAuth",
+    ):
+        assert old not in UI, old
+    assert UI.count("window.PLUGIN_API") == 1, "captured once, as API"
 
 
 def test_a_folder_run_sends_the_picked_folder_beside_the_alias_folder() -> None:
@@ -57,3 +70,15 @@ def test_only_the_gate_enables_preview_and_create() -> None:
 
 def test_recalculate_same_needs_a_preview_of_the_current_source() -> None:
     assert "_sam3SourceKey() !== _sam3LastPreviewSource" in _function("sam3PreviewBlocker")
+
+
+def test_the_token_chooser_is_shown() -> None:
+    # The frame always has API.credentials, so nothing reveals the button later: it starts visible.
+    button = re.search(r'<button[^>]*id="sam3-hf-choose-btn"[^>]*>', UI)
+    assert button and "display:none" not in button.group(0)
+
+
+def test_a_hub_without_the_frame_is_told_before_anything_starts() -> None:
+    # A Hub showing plugin pages inline has no PLUGIN_API.protocol: the page says so instead of failing midway.
+    guard = UI.index("if (!API || !API.protocol)")
+    assert guard < UI.index("API.getConfig(") and guard < UI.index("API.credentials")

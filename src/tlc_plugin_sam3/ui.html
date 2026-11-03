@@ -28,7 +28,7 @@
 <div class="plugin-info-banner" id="sam3-hf-card">
   <span style="display:inline-flex"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="14" height="7" rx="2"/><circle cx="10" cy="6" r="4"/><path d="M10 10v3"/></svg></span>
   <span id="sam3-hf-label" style="flex:1">Hugging Face token…</span>
-  <button class="btn btn-ghost btn-sm" id="sam3-hf-choose-btn" style="display:none" onclick="sam3ChooseHfToken()">Choose…</button>
+  <button class="btn btn-ghost btn-sm" id="sam3-hf-choose-btn" onclick="sam3ChooseHfToken()">Choose…</button>
   <span id="sam3-hf-status" class="text-sm"></span>
 </div>
 
@@ -200,7 +200,7 @@
         <div id="sam3-running-banner" class="plugin-info-banner" style="display:none;margin-bottom:10px">
           <span class="plugin-status-running" style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600">Running</span>
           <span id="sam3-running-text" class="text-sm" style="flex:1"></span>
-          <a href="/queue" class="btn btn-ghost btn-sm" onclick="PLUGIN_API.navigate('/queue');return false;">Open Queue</a>
+          <a href="/queue" class="btn btn-ghost btn-sm" onclick="API.nav.go('/queue');return false;">Open Queue</a>
         </div>
         <button class="btn btn-plugin" id="sam3-create-btn" onclick="sam3CreateAndPredict()" disabled
                 aria-describedby="sam3-create-why">Create table &amp; label images</button>
@@ -218,7 +218,8 @@
         <div id="sam3-progress-area" style="display:none">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
             <span id="sam3-progress-label" class="text-sm" style="flex:1">Idle</span>
-            <a id="sam3-project-link-a" href="#" class="btn btn-sm btn-secondary" style="display:none">Open</a>
+            <a id="sam3-project-link-a" href="#" class="btn btn-sm btn-secondary" style="display:none"
+               onclick="API.nav.go(this.getAttribute('href'));return false;">Open</a>
             <span id="sam3-progress-pct" class="text-sm" style="font-weight:600">0%</span>
           </div>
           <div class="plugin-progress-wrap">
@@ -252,7 +253,15 @@ var _sam3PreviewBusy = false;     // a preview is checking images, loading the m
 var _sam3JobBusy = false;         // a create-and-predict job is being submitted, queued or running
 var _sam3CreateJobId = null;
 var sam3Presets = null; // the SDK's preset bar (_tlcPluginPresets), once mounted
-var _sam3ComputeUrl = (PLUGIN_API.getConfig("compute_service_url") || "http://localhost:5020").replace(/\/$/, "");
+var API = window.PLUGIN_API;
+// This page runs in the Hub's isolated plugin frame (PLUGIN_API.protocol); a Hub that shows plugin pages inline
+// has none of its namespaced calls, so say so rather than fail halfway through starting.
+if (!API || !API.protocol) {
+  document.getElementById("sam3-page").textContent =
+    "SAM3 needs a newer 3LC Hub, one that opens plugin pages in their own frame. Update the Hub, or install SAM3 0.2.";
+  throw new Error("SAM3 needs the isolated plugin frame (PLUGIN_API.protocol)");
+}
+var _sam3ComputeUrl = API.getConfig("compute_service_url").replace(/\/$/, "");
 
 var _SAM3_STORAGE_KEY = "sam3_selected_config"; // the old config bar's key; the preset bar honours it once
 
@@ -273,7 +282,7 @@ var _vNatW = 0, _vNatH = 0;
 function _sam3Esc(s) {
   var el = document.createElement("span"); el.textContent = s || ""; return el.innerHTML;
 }
-function _sam3Fetch(path, opts) { return PLUGIN_API.authFetch(_sam3ComputeUrl + path, opts); }
+function _sam3Fetch(path, opts) { return API.http.request(path, opts); }
 function _sam3Post(path, body, opts) {
   var fetchOpts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   if (opts && opts.timeout) fetchOpts.timeout = opts.timeout;
@@ -352,29 +361,21 @@ function sam3RemoveLabel(idx) { _sam3Labels.splice(idx, 1); sam3RenderLabels(); 
 
 // ── Hugging Face token ───────────────────────────────────────
 // SAM 3's weights are gated, so the download needs a token. It is a SECRET Connection the Hub
-// keeps: PLUGIN_API.chooseCredential lets the person pick (or add) one, and the Hub sends the
+// keeps: API.credentials.choose lets the person pick (or add) one, and the Hub sends the
 // choice with this plugin's runs and its preview / warm-up / status calls (the manifest's
 // credential_routes). This page never sees the value. /model-status says which source the worker
-// would use ("connection", "environment", "legacy-file" or "none").
+// would use ("connection", "environment" or "none").
 var _SAM3_HF_SERVICE = "huggingface";
 var _sam3HfSource = "", _sam3ModelReady = false;
-function _sam3HfChooser() { return typeof PLUGIN_API.chooseCredential === "function"; }
-function _sam3HfChosen() {
-  return typeof PLUGIN_API.credential === "function" ? PLUGIN_API.credential(_SAM3_HF_SERVICE) : null;
-}
+function _sam3HfChosen() { return API.credentials.remembered(_SAM3_HF_SERVICE); }
 function sam3RenderHfToken(source) {
   _sam3HfSource = source || "";
   var label = document.getElementById("sam3-hf-label"), btn = document.getElementById("sam3-hf-choose-btn");
   var chosen = _sam3HfChosen(), text;
   if (source === "connection") text = "Hugging Face token: your Connection";
-  else if (chosen) text = "Hugging Face token: a Connection is chosen, but this compute service does not pass it on yet"
-    + (source === "legacy-file" ? " — using the legacy token file meanwhile" : "");
-  else if (source === "legacy-file") text = "Using the legacy token file — choose a Connection";
   else if (source === "environment") text = "Hugging Face token: from the worker's environment — choose a Connection to use your own";
   else text = "Hugging Face token required — choose a Connection";
-  if (!_sam3HfChooser()) text += " (this Hub cannot choose one; update it)";
   label.textContent = text;
-  btn.style.display = _sam3HfChooser() ? "" : "none";
   btn.textContent = chosen ? "Change…" : "Choose…";
 }
 function sam3RefreshHfToken() {
@@ -388,8 +389,7 @@ function sam3RefreshHfToken() {
   });
 }
 function sam3ChooseHfToken() {
-  if (!_sam3HfChooser()) return Promise.resolve(null);
-  return PLUGIN_API.chooseCredential(_SAM3_HF_SERVICE).then(function(id) {
+  return API.credentials.choose(_SAM3_HF_SERVICE).then(function(id) {
     if (id) sam3Log("Hugging Face token: Connection chosen");
     return sam3RefreshHfToken().then(function() { return id; });
   }).catch(function(e) {
@@ -399,7 +399,7 @@ function sam3ChooseHfToken() {
 }
 // Before the first download: with no token from anywhere, ask (cancelling still tries).
 function _sam3EnsureHfToken() {
-  if (_sam3ModelReady || _sam3HfSource !== "none" || _sam3HfChosen() || !_sam3HfChooser()) return Promise.resolve();
+  if (_sam3ModelReady || _sam3HfSource !== "none" || _sam3HfChosen()) return Promise.resolve();
   return sam3ChooseHfToken();
 }
 sam3RefreshHfToken();
@@ -414,18 +414,15 @@ function sam3SourceChanged() {
 }
 
 // Selection-time data check against the Hub's "Run on:" target: warn the moment a table is picked
-// (or the target flips), not when the run is submitted. Optional bridge API — feature-detected and
-// silent on Hubs that predate it. A Hub that annotates every table input itself says so with
-// hostChecksTableInputs; the note is then left to it, so it is not shown twice.
+// (or the target flips), not when the run is submitted.
 function sam3CheckTableAgainstRunTarget() {
   var note = document.getElementById("sam3-run-target-data-note");
-  if (!note || !window.PLUGIN_API || typeof PLUGIN_API.checkDataForRunTarget !== "function") return;
-  if (PLUGIN_API.hostChecksTableInputs) { note.style.display = "none"; return; }
+  if (!note) return;
   var url = document.getElementById("sam3-table-url").value.trim();
   var isTable = document.getElementById("sam3-source-type").value === "table";
-  var target = (typeof PLUGIN_API.getRunTarget === "function") ? PLUGIN_API.getRunTarget() : { target: "local" };
+  var target = API.getRunTarget();
   if (!isTable || !url || !target || target.target !== "node") { note.style.display = "none"; return; }
-  PLUGIN_API.checkDataForRunTarget(url).then(function(verdict) {
+  API.run.checkTable(url).then(function(verdict) {
     if (document.getElementById("sam3-table-url").value.trim() !== url) return;  // stale
     var notes = (verdict && verdict.notes) || [];
     if (verdict && verdict.ok && !notes.length) { note.style.display = "none"; return; }
@@ -434,9 +431,7 @@ function sam3CheckTableAgainstRunTarget() {
     note.style.display = "";
   }).catch(function() { note.style.display = "none"; });
 }
-if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
-  PLUGIN_API.onRunTargetChange(sam3CheckTableAgainstRunTarget);
-}
+API.lifecycle.onDispose(API.onRunTargetChange(sam3CheckTableAgainstRunTarget));
 function sam3ReadLabels() {
   var url = document.getElementById("sam3-table-url").value.trim(); if (!url) return Promise.resolve();
   return _sam3Post("/api/plugins/sam3/read-labels", { table_url: url }).then(function(data) {
@@ -465,7 +460,7 @@ function sam3DefaultFormData() {
 function sam3ContextInputs() {
   var q = new URLSearchParams(window.location.search);
   var table = q.get("table") || q.get("train") || "";
-  var ctx = (typeof PLUGIN_API !== "undefined" && PLUGIN_API.context) ? PLUGIN_API.context : {};
+  var ctx = API.context || {};
   if (!table && ctx.resourceUrls && ctx.resourceUrls.length) table = ctx.resourceUrls[0];
   return table ? { source_type: "table", folder: "", table_url: table } : null;
 }
@@ -811,10 +806,10 @@ function sam3CreateAndPredict() {
     "Creating table → prediction will start automatically");
 }
 
-// ── Jobs: the generic job channel via PluginJobs, plus the plugin's own events ──
+// ── Jobs: the generic job channel via API.jobs, plus the plugin's own events ──
 // The host relays ctx.emit() events on the plugin's namespace ("/sam3") and the
 // generic lifecycle (status / progress / run_url / error) as job_update on the same
-// namespace. PluginJobs (injected by the SDK) owns the socket; this fragment only
+// namespace. API.jobs (the SDK's frame runtime) owns the socket; this fragment only
 // subscribes. The job page is a launcher: the Queue page is the durable view, so on
 // mount the fragment re-attaches to a live sam3 job from the host's job list.
 var _SAM3_NS = "/sam3";
@@ -889,11 +884,10 @@ function _sam3OnJobError(job) {
 var _sam3JobHandlers = { onUpdate: _sam3OnJobUpdate, onDone: _sam3OnJobDone, onError: _sam3OnJobError };
 
 function _sam3SubmitJob(body, logMsg, statusMsg) {
-  if (!window.PluginJobs) { sam3Log("Error: job tracker unavailable — reload the page"); return; }
   _sam3CreateJobId = null;
   _sam3RenderClassStats(null);
   _sam3JobBusy = true; sam3Gate();  // until the job ends; a refused start ends it in onError
-  PluginJobs.run("sam3", body, _sam3JobHandlers).then(function(resp) {
+  API.jobs.run("sam3", body, _sam3JobHandlers).then(function(resp) {
     if (!resp || resp.error || !resp.job_id) return;   // onError already reported it
     sam3Log(logMsg + ": " + resp.job_id);
     // A job that finished before the /run response already fired its terminal handler.
@@ -905,8 +899,7 @@ function _sam3SubmitJob(body, logMsg, statusMsg) {
 
 // Seed-on-mount: re-attach to a sam3 job that is already queued/running.
 function _sam3SeedFromHost() {
-  if (!window.PluginJobs || !PluginJobs.list) return;
-  PluginJobs.list("sam3").then(function(jobs) {
+  API.jobs.list("sam3").then(function(jobs) {
     var live = jobs.filter(function(j) { return j.status === "queued" || j.status === "running"; });
     if (!live.length) return;
     var job = live[0];
@@ -914,20 +907,17 @@ function _sam3SeedFromHost() {
     if (job.progress) _sam3RenderProgress(job.progress.percent, job.progress.label, job.progress.timing);
     document.getElementById("sam3-create-status").textContent = "A SAM3 job is already running";
     sam3Log("Re-attached to running job " + job.id);
-    _sam3Untrack = PluginJobs.track(_SAM3_NS, job.id, _sam3JobHandlers);
+    _sam3Untrack = API.jobs.track(_SAM3_NS, job.id, _sam3JobHandlers);
   }).catch(function() {});
 }
 
 // The plugin's own events (ctx.emit) — richer than the generic schema carries.
-if (window.PluginJobs) {
-  PluginJobs.on(_SAM3_NS, "sam3_log", function(data) { sam3Log(data.message); });
-  PluginJobs.on(_SAM3_NS, "sam3_progress", function(data) {
-    _sam3RenderProgress(data.percent, data.label, data.timing);
-    _sam3RenderClassStats(data.class_avg, data.phase, data.phase_label);
-  });
-} else {
-  sam3Log("Job tracker not available — live progress is disabled");
-}
+// Leaving the page disposes it, not the job: these only stop listening.
+API.lifecycle.onDispose(API.jobs.on(_SAM3_NS, "sam3_log", function(data) { sam3Log(data.message); }));
+API.lifecycle.onDispose(API.jobs.on(_SAM3_NS, "sam3_progress", function(data) {
+  _sam3RenderProgress(data.percent, data.label, data.timing);
+  _sam3RenderClassStats(data.class_avg, data.phase, data.phase_label);
+}));
 
 // ── Init ─────────────────────────────────────────────────────
 sam3RenderLabels();
