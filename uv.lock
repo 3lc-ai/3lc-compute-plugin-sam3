@@ -3,10 +3,10 @@ revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "(python_full_version >= '3.14' and sys_platform == 'linux') or (python_full_version >= '3.14' and sys_platform == 'win32')",
-    "(python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'win32')",
-    "(python_full_version < '3.12' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'win32')",
     "python_full_version >= '3.14' and sys_platform != 'linux' and sys_platform != 'win32'",
+    "(python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'win32')",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'linux' and sys_platform != 'win32'",
+    "(python_full_version < '3.12' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'win32')",
     "python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 
@@ -117,7 +117,7 @@ dev = [
 requires-dist = [
     { name = "3lc", specifier = ">=3.5.0.dev149866,<4.0.0", index = "https://pypi.3lc.ai/repositories/prereleases/" },
     { name = "3lc", extras = ["pacmap", "umap"], marker = "extra == 'sam3'", specifier = ">=3.5.0.dev149866,<4.0.0", index = "https://pypi.3lc.ai/repositories/prereleases/" },
-    { name = "3lc-compute-plugin-sdk", git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk?rev=a0d9ae17531a3ef0c09d064d5bf9c430cf1d20d1" },
+    { name = "3lc-compute-plugin-sdk", git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk?rev=ba0af88f7cf6accbee1b33ad3bc49e5e8b667943" },
     { name = "decord", marker = "sys_platform == 'linux' and extra == 'sam3'" },
     { name = "matplotlib", marker = "extra == 'sam3'" },
     { name = "opencv-python-headless", marker = "extra == 'sam3'" },
@@ -137,7 +137,7 @@ dev = [{ name = "pytest", specifier = ">=8,<9" }]
 [[package]]
 name = "3lc-compute-plugin-sdk"
 version = "0.7.0"
-source = { git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk?rev=a0d9ae17531a3ef0c09d064d5bf9c430cf1d20d1#a0d9ae17531a3ef0c09d064d5bf9c430cf1d20d1" }
+source = { git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk?rev=ba0af88f7cf6accbee1b33ad3bc49e5e8b667943#ba0af88f7cf6accbee1b33ad3bc49e5e8b667943" }
 dependencies = [
     { name = "3lc", extra = ["pandas"] },
     { name = "litestar" },
@@ -304,8 +304,8 @@ version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "(python_full_version >= '3.14' and sys_platform == 'linux') or (python_full_version >= '3.14' and sys_platform == 'win32')",
-    "(python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'win32')",
     "python_full_version >= '3.14' and sys_platform != 'linux' and sys_platform != 'win32'",
+    "(python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'win32')",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
@@ -2607,8 +2607,8 @@ version = "1.18.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "(python_full_version >= '3.14' and sys_platform == 'linux') or (python_full_version >= '3.14' and sys_platform == 'win32')",
-    "(python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'win32')",
     "python_full_version >= '3.14' and sys_platform != 'linux' and sys_platform != 'win32'",
+    "(python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'win32')",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
