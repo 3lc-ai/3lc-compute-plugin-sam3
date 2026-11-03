@@ -13,10 +13,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "3lc-compute-plugin-sam3"
-version = "0.2.6"
+version = "0.3.0"
 description = "SAM3 auto-label plugin for the 3LC compute service."
 readme = "README-wheel.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 # Apache-2.0: SAM lineage is Apache-2.0 and the other deps (torch/torchvision/umap-learn) are
 # permissive — no copyleft obligation. The SAM3 model WEIGHTS carry their own license, pulled at
 # runtime (separate from this code). Full text in ./LICENSE.
@@ -27,7 +27,7 @@ license = "Apache-2.0"
 # direct requirement that names one. Relax it to a release floor once that core ships.
 dependencies = [
     "3lc>=3.5.0.dev149866,<4.0.0",
-    "3lc-compute-plugin-sdk>=0.5.5,<0.7.0",
+    "3lc-compute-plugin-sdk>=0.7.0,<0.8.0",
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra sam3, or
@@ -89,7 +89,8 @@ torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_plat
 torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 # The staged core and SDK 0.5 are not on PyPI yet; drop these lines once they are.
 "3lc" = { index = "staging" }
-3lc-compute-plugin-sdk = { index = "staging" }
+# SDK 0.7.0 (the isolated plugin frame) is not published yet: the commit Compute and the Hub pin.
+3lc-compute-plugin-sdk = { git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk", rev = "a0d9ae17531a3ef0c09d064d5bf9c430cf1d20d1" }
 
 # Ruff config mirrors 3lc-compute-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —
 # linting must not require resolving the heavy ML stack.

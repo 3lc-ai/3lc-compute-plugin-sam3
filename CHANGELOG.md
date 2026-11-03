@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Releases as 0.3.0: its page needs the isolated plugin frame (`[ui] frame_protocol = 1`) and
+SDK 0.7.
+
 ### Changed
 
 - **The page runs in the Hub's isolated plugin frame.** It uses the frame's namespaced API
