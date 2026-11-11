@@ -2,7 +2,7 @@
 id = "sam3"
 name = "SAM3"
 description = "Auto-label images with SAM3 — preview results, create tables, and run predictions with text prompts."
-version = "0.3.0"
+version = "0.3.1"
 # The page runs in the sandboxed plugin frame (compute 1.2 and later serve it). Compute 1.2 also ran without
 # it, so the page checks PLUGIN_API.protocol itself and says when the Hub is too old.
 min_service_version = "1.2.0"
@@ -51,3 +51,6 @@ credentials = [
     { service = "huggingface", required = true, value_hint = "A read token from huggingface.co/settings/tokens, for an account that has accepted SAM 3's license on its model page." },
 ]
 credential_routes = ["/preview", "/model-warmup", "/model-status"]
+
+[mcp]
+tools_file = "mcp-tools.json"

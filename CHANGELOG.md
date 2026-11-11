@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Share native operation validation and MCP schema generation; add drift checks.
+- Separate maintained UI sources from packaged fragments without changing the layout.
+
 All notable changes to `3lc-compute-plugin-sam3` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -11,6 +16,9 @@ Releases as 0.3.0: its page needs the isolated plugin frame (`[ui] frame_protoco
 SDK 0.7.
 
 ### Changed
+
+- Publish the prediction run URL immediately after creation, before processing images, so live
+  queue progress and the actual run name are available in the Hub while prediction is running.
 
 - **The page runs in the Hub's isolated plugin frame.** It uses the frame's namespaced API
   (`API.http.request`, `API.jobs`, `API.credentials`, `API.nav`, `API.run.checkTable`) instead of

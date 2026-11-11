@@ -1,0 +1,15 @@
+
+/* ── SAM3-specific styles ── */
+.sam3-layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px;
+}
+.sam3-layout > div { min-width: 0; }
+@container plugin-workbench (min-width: 1450px) {
+  .sam3-layout { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
+}
+/* One line kept free under Preview and Create for why they cannot run yet, so the page does not
+   move as the reason comes and goes. */
+.sam3-why { margin-top: 6px; line-height: 1.5; min-height: 1.5em; }
+@container plugin-workbench (max-width: 1000px) {
+  .sam3-layout { grid-template-columns: 1fr; }
+}

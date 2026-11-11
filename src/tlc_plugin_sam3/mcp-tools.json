@@ -1,0 +1,518 @@
+[
+  {
+    "name": "predict",
+    "title": "Predict with SAM3",
+    "description": "Predict with SAM3. Uses the same native job and preparation path as the module. Select a Hugging Face Connection for gated weights. Poll job_status for the result.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "table_url": {
+          "type": "string",
+          "default": ""
+        },
+        "folder": {
+          "type": "string",
+          "default": ""
+        },
+        "source_table_url": {
+          "type": "string",
+          "default": ""
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "label_colors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "max_images": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "project_name": {
+          "type": "string",
+          "default": ""
+        },
+        "run_name": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "alias_token": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_folder": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_source_folder": {
+          "type": "string",
+          "default": ""
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.95,
+          "default": 0.2
+        },
+        "modality": {
+          "type": "string",
+          "enum": [
+            "segmentation",
+            "bbox"
+          ],
+          "default": "segmentation"
+        },
+        "embedding_dim": {
+          "type": "integer",
+          "enum": [
+            2,
+            3
+          ],
+          "default": 2
+        },
+        "device": {
+          "type": "string",
+          "enum": [
+            "cuda",
+            "cpu"
+          ],
+          "default": "cuda"
+        },
+        "dataset_name": {
+          "type": "string",
+          "default": "train",
+          "minLength": 1
+        },
+        "table_name": {
+          "type": "string",
+          "default": "initial",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "table_url"
+      ],
+      "allOf": [
+        {
+          "required": [
+            "table_url"
+          ],
+          "properties": {
+            "table_url": {
+              "pattern": "\\S"
+            }
+          }
+        }
+      ]
+    },
+    "job": {
+      "body": {
+        "mode": "predict",
+        "table_url": "{{table_url}}",
+        "folder": "{{folder}}",
+        "source_table_url": "{{source_table_url}}",
+        "labels": "{{labels}}",
+        "label_colors": "{{label_colors}}",
+        "max_images": "{{max_images}}",
+        "project_name": "{{project_name}}",
+        "run_name": "{{run_name}}",
+        "alias_enabled": "{{alias_enabled}}",
+        "alias_token": "{{alias_token}}",
+        "alias_folder": "{{alias_folder}}",
+        "alias_source_folder": "{{alias_source_folder}}",
+        "confidence": "{{confidence}}",
+        "modality": "{{modality}}",
+        "embedding_dim": "{{embedding_dim}}",
+        "device": "{{device}}",
+        "dataset_name": "{{dataset_name}}",
+        "table_name": "{{table_name}}"
+      },
+      "outputs": [
+        "run_url"
+      ],
+      "wait": false
+    }
+  },
+  {
+    "name": "create_table",
+    "title": "Create a SAM3 annotation table",
+    "description": "Create a SAM3 annotation table. Uses the same native job and preparation path as the module. Select a Hugging Face Connection for gated weights. Poll job_status for the result.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "table_url": {
+          "type": "string",
+          "default": ""
+        },
+        "folder": {
+          "type": "string",
+          "default": ""
+        },
+        "source_table_url": {
+          "type": "string",
+          "default": ""
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "label_colors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "max_images": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "project_name": {
+          "type": "string",
+          "default": ""
+        },
+        "run_name": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "alias_token": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_folder": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_source_folder": {
+          "type": "string",
+          "default": ""
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.95,
+          "default": 0.2
+        },
+        "modality": {
+          "type": "string",
+          "enum": [
+            "segmentation",
+            "bbox"
+          ],
+          "default": "segmentation"
+        },
+        "embedding_dim": {
+          "type": "integer",
+          "enum": [
+            2,
+            3
+          ],
+          "default": 2
+        },
+        "device": {
+          "type": "string",
+          "enum": [
+            "cuda",
+            "cpu"
+          ],
+          "default": "cuda"
+        },
+        "dataset_name": {
+          "type": "string",
+          "default": "train",
+          "minLength": 1
+        },
+        "table_name": {
+          "type": "string",
+          "default": "initial",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "labels",
+        "project_name"
+      ],
+      "allOf": [
+        {
+          "required": [
+            "labels",
+            "project_name"
+          ],
+          "properties": {
+            "labels": {
+              "minItems": 1
+            },
+            "project_name": {
+              "pattern": "\\S"
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "folder"
+              ],
+              "properties": {
+                "folder": {
+                  "pattern": "\\S"
+                },
+                "source_table_url": {
+                  "maxLength": 0
+                }
+              }
+            },
+            {
+              "required": [
+                "source_table_url"
+              ],
+              "properties": {
+                "source_table_url": {
+                  "pattern": "\\S"
+                },
+                "folder": {
+                  "maxLength": 0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "job": {
+      "body": {
+        "mode": "create_table",
+        "table_url": "{{table_url}}",
+        "folder": "{{folder}}",
+        "source_table_url": "{{source_table_url}}",
+        "labels": "{{labels}}",
+        "label_colors": "{{label_colors}}",
+        "max_images": "{{max_images}}",
+        "project_name": "{{project_name}}",
+        "run_name": "{{run_name}}",
+        "alias_enabled": "{{alias_enabled}}",
+        "alias_token": "{{alias_token}}",
+        "alias_folder": "{{alias_folder}}",
+        "alias_source_folder": "{{alias_source_folder}}",
+        "confidence": "{{confidence}}",
+        "modality": "{{modality}}",
+        "embedding_dim": "{{embedding_dim}}",
+        "device": "{{device}}",
+        "dataset_name": "{{dataset_name}}",
+        "table_name": "{{table_name}}"
+      },
+      "outputs": [
+        "run_url"
+      ],
+      "wait": false
+    }
+  },
+  {
+    "name": "create_and_predict",
+    "title": "Create and label a table with SAM3",
+    "description": "Create and label a table with SAM3. Uses the same native job and preparation path as the module. Select a Hugging Face Connection for gated weights. Poll job_status for the result.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "table_url": {
+          "type": "string",
+          "default": ""
+        },
+        "folder": {
+          "type": "string",
+          "default": ""
+        },
+        "source_table_url": {
+          "type": "string",
+          "default": ""
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "label_colors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "max_images": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "project_name": {
+          "type": "string",
+          "default": ""
+        },
+        "run_name": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "alias_token": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_folder": {
+          "type": "string",
+          "default": ""
+        },
+        "alias_source_folder": {
+          "type": "string",
+          "default": ""
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.95,
+          "default": 0.2
+        },
+        "modality": {
+          "type": "string",
+          "enum": [
+            "segmentation",
+            "bbox"
+          ],
+          "default": "segmentation"
+        },
+        "embedding_dim": {
+          "type": "integer",
+          "enum": [
+            2,
+            3
+          ],
+          "default": 2
+        },
+        "device": {
+          "type": "string",
+          "enum": [
+            "cuda",
+            "cpu"
+          ],
+          "default": "cuda"
+        },
+        "dataset_name": {
+          "type": "string",
+          "default": "train",
+          "minLength": 1
+        },
+        "table_name": {
+          "type": "string",
+          "default": "initial",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "labels",
+        "project_name"
+      ],
+      "allOf": [
+        {
+          "required": [
+            "labels",
+            "project_name"
+          ],
+          "properties": {
+            "labels": {
+              "minItems": 1
+            },
+            "project_name": {
+              "pattern": "\\S"
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "folder"
+              ],
+              "properties": {
+                "folder": {
+                  "pattern": "\\S"
+                },
+                "source_table_url": {
+                  "maxLength": 0
+                }
+              }
+            },
+            {
+              "required": [
+                "source_table_url"
+              ],
+              "properties": {
+                "source_table_url": {
+                  "pattern": "\\S"
+                },
+                "folder": {
+                  "maxLength": 0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "job": {
+      "body": {
+        "mode": "create_and_predict",
+        "table_url": "{{table_url}}",
+        "folder": "{{folder}}",
+        "source_table_url": "{{source_table_url}}",
+        "labels": "{{labels}}",
+        "label_colors": "{{label_colors}}",
+        "max_images": "{{max_images}}",
+        "project_name": "{{project_name}}",
+        "run_name": "{{run_name}}",
+        "alias_enabled": "{{alias_enabled}}",
+        "alias_token": "{{alias_token}}",
+        "alias_folder": "{{alias_folder}}",
+        "alias_source_folder": "{{alias_source_folder}}",
+        "confidence": "{{confidence}}",
+        "modality": "{{modality}}",
+        "embedding_dim": "{{embedding_dim}}",
+        "device": "{{device}}",
+        "dataset_name": "{{dataset_name}}",
+        "table_name": "{{table_name}}"
+      },
+      "outputs": [
+        "run_url"
+      ],
+      "wait": false
+    }
+  }
+]

@@ -48,6 +48,7 @@ def _predict(
         dataset_name="images",
         root_url=tmp_path,
     )
+    events: list[dict[str, Any]] = []
     retained: list[weakref.ReferenceType[Any]] = []
     call = 0
     cancel_event = threading.Event()
@@ -65,6 +66,7 @@ def _predict(
         return value
 
     def read_image(*_args: Any) -> Image.Image:
+        assert any(e.get("event") == "result" and e["run_url"] == str(runs[0].url) for e in events)
         assert_released()
         return track(Image.new("RGB", (11, 7)))
 
@@ -116,7 +118,7 @@ def _predict(
         "memory-test",
         {"table_url": str(table.url), "run_name": "prediction", "embedding_dim": 2},
         tmp_path,
-        sink=lambda event: None,
+        sink=events.append,
         cancel_event=cancel_event,
     )
     tlc_plugin_sam3._run_predict(ctx, root_url=str(tmp_path))

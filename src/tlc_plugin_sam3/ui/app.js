@@ -1,0 +1,717 @@
+
+// ── State ────────────────────────────────────────────────────
+var _sam3Labels = []; // Array of {name, color}
+var _sam3LastPreviewPath = "";
+var _sam3LastPreviewSource = "";  // the source _sam3LastPreviewPath was found in (_sam3SourceKey)
+var _sam3PreviewBusy = false;     // a preview is checking images, loading the model or running
+var _sam3JobBusy = false;         // a create-and-predict job is being submitted, queued or running
+var _sam3CreateJobId = null;
+var sam3Presets = null; // the SDK's preset bar (_tlcPluginPresets), once mounted
+var API = window.PLUGIN_API;
+// This page runs in the Hub's isolated plugin frame (PLUGIN_API.protocol); a Hub that shows plugin pages inline
+// has none of its namespaced calls, so say so rather than fail halfway through starting.
+if (!API || !API.protocol) {
+  document.getElementById("sam3-page").textContent =
+    "SAM3 needs a newer 3LC Hub, one that opens plugin pages in their own frame. Update the Hub, or install SAM3 0.2.";
+  throw new Error("SAM3 needs the isolated plugin frame (PLUGIN_API.protocol)");
+}
+var _sam3ComputeUrl = API.getConfig("compute_service_url").replace(/\/$/, "");
+
+var _SAM3_STORAGE_KEY = "sam3_selected_config"; // the old config bar's key; the preset bar honours it once
+
+var _sam3DefaultColors = [
+  "#64c8ff", "#78ffb4", "#c8a0ff", "#ffdc78",
+  "#ff96c8", "#96f0e6", "#e6e68c", "#b4c8ff",
+  "#ff9664", "#78ffc8", "#dc96ff", "#ffa050"
+];
+var _sam3ColorIndex = 0;
+
+// ── Viewer state ─────────────────────────────────────────────
+var _vScale = 1, _vX = 0, _vY = 0;
+var _vDragging = false, _vStartX = 0, _vStartY = 0, _vStartPanX = 0, _vStartPanY = 0;
+var _vImg = null; // current <img> element
+var _vNatW = 0, _vNatH = 0;
+
+// ── Helpers ──────────────────────────────────────────────────
+function _sam3Esc(s) {
+  var el = document.createElement("span"); el.textContent = s || ""; return el.innerHTML;
+}
+function _sam3Fetch(path, opts) { return API.http.request(path, opts); }
+function _sam3Post(path, body, opts) {
+  var fetchOpts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  if (opts && opts.timeout) fetchOpts.timeout = opts.timeout;
+  return _sam3Fetch(path, fetchOpts)
+    .then(function(r) { return r.json(); });
+}
+function _sam3FmtDuration(s) {
+  if (s === undefined || s === null) return "--";
+  s = Math.round(s);
+  if (s < 60) return s + "s";
+  var m = Math.floor(s / 60), sec = s % 60;
+  if (m < 60) return m + "m " + (sec < 10 ? "0" : "") + sec + "s";
+  var h = Math.floor(m / 60); m = m % 60;
+  return h + "h " + (m < 10 ? "0" : "") + m + "m";
+}
+function sam3Log(msg) {
+  var el = document.getElementById("sam3-log");
+  el.textContent += "[" + new Date().toLocaleTimeString() + "] " + msg + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+function _sam3NextColor() {
+  var c = _sam3DefaultColors[_sam3ColorIndex % _sam3DefaultColors.length]; _sam3ColorIndex++; return c;
+}
+function _sam3LabelNames() { return _sam3Labels.map(function(l) { return l.name; }); }
+function _sam3LabelColors() { return _sam3Labels.map(function(l) { return l.color; }); }
+function _sam3RenderClassStats(classAvg, phase, phaseLabel) {
+  var el = document.getElementById("sam3-class-stats");
+  if (phase === "processing") {
+    el.innerHTML = '<span class="plugin-status-running" style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600">' +
+      _sam3Esc(phaseLabel || "Processing...") + '</span>';
+    return;
+  }
+  if (!classAvg || typeof classAvg !== "object") { el.innerHTML = ""; return; }
+  var keys = Object.keys(classAvg);
+  if (keys.length === 0) { el.innerHTML = ""; return; }
+  var html = keys.map(function(k) {
+    return '<span class="plugin-metric-card" style="display:inline-block;padding:3px 8px;margin:2px;font-size:10px">' +
+      '<span class="plugin-metric-label">' + _sam3Esc(k) + '</span> ' +
+      '<span class="plugin-metric-value" style="font-size:12px">' + classAvg[k] + '/img</span></span>';
+  }).join("");
+  el.innerHTML = html;
+}
+
+// ── Labels ───────────────────────────────────────────────────
+function sam3RenderLabels() {
+  var wrap = document.getElementById("sam3-labels-wrap"); wrap.innerHTML = "";
+  _sam3Labels.forEach(function(label, i) {
+    var tag = document.createElement("span"); tag.className = "plugin-label-tag";
+    var ci = document.createElement("input"); ci.type = "color"; ci.className = "plugin-label-color";
+    ci.value = label.color; ci.title = "Change color"; ci.setAttribute("data-idx", i);
+    ci.addEventListener("input", function() {
+      _sam3Labels[parseInt(this.getAttribute("data-idx"))].color = this.value;
+      if (sam3Presets) sam3Presets.changed();
+    });
+    var ns = document.createElement("span"); ns.textContent = label.name;
+    var rb = document.createElement("button"); rb.innerHTML = "&times;"; rb.title = "Remove";
+    rb.setAttribute("data-idx", i);
+    rb.addEventListener("click", function() { sam3RemoveLabel(parseInt(this.getAttribute("data-idx"))); });
+    tag.appendChild(ci); tag.appendChild(ns); tag.appendChild(rb); wrap.appendChild(tag);
+  });
+  document.getElementById("sam3-label-input").required = _sam3Labels.length === 0;
+  sam3Gate();
+  if (sam3Presets) sam3Presets.changed();
+}
+function sam3AddLabel() {
+  var input = document.getElementById("sam3-label-input"); var val = input.value.trim();
+  if (!val) { input.focus(); return; }
+  val.split(",").forEach(function(part) {
+    var name = part.trim(); if (!name) return;
+    var exists = _sam3Labels.some(function(l) { return l.name === name; });
+    if (!exists) _sam3Labels.push({ name: name, color: _sam3NextColor() });
+  });
+  sam3RenderLabels(); input.value = ""; input.focus();
+}
+function sam3RemoveLabel(idx) { _sam3Labels.splice(idx, 1); sam3RenderLabels(); }
+
+// ── Hugging Face token ───────────────────────────────────────
+// SAM 3's weights are gated, so the download needs a token. It is a SECRET Connection the Hub
+// keeps: API.credentials.choose lets the person pick (or add) one, and the Hub sends the
+// choice with this plugin's runs and its preview / warm-up / status calls (the manifest's
+// credential_routes). This page never sees the value. /model-status says which source the worker
+// would use ("connection", "environment" or "none").
+var _SAM3_HF_SERVICE = "huggingface";
+var _sam3HfSource = "", _sam3ModelReady = false;
+function _sam3HfChosen() { return API.credentials.remembered(_SAM3_HF_SERVICE); }
+function sam3RenderHfToken(source) {
+  _sam3HfSource = source || "";
+  var label = document.getElementById("sam3-hf-label"), btn = document.getElementById("sam3-hf-choose-btn");
+  var chosen = _sam3HfChosen(), text;
+  if (source === "connection") text = "Hugging Face token: your Connection";
+  else if (source === "environment") text = "Hugging Face token: from the worker's environment — choose a Connection to use your own";
+  else text = "Hugging Face token required — choose a Connection";
+  label.textContent = text;
+  btn.textContent = chosen ? "Change…" : "Choose…";
+}
+function sam3RefreshHfToken() {
+  document.getElementById("sam3-hf-status").textContent = "";
+  return _sam3Fetch("/api/plugins/sam3/model-status").then(function(r) { return r.json(); }).then(function(data) {
+    _sam3ModelReady = !!(data && data.state === "ready");
+    sam3RenderHfToken(data && data.hf_token);
+  }).catch(function(e) {
+    sam3RenderHfToken("");
+    document.getElementById("sam3-hf-status").textContent = "Error: " + (e && e.message ? e.message : e);
+  });
+}
+function sam3ChooseHfToken() {
+  return API.credentials.choose(_SAM3_HF_SERVICE).then(function(id) {
+    if (id) sam3Log("Hugging Face token: Connection chosen");
+    return sam3RefreshHfToken().then(function() { return id; });
+  }).catch(function(e) {
+    document.getElementById("sam3-hf-status").textContent = "Error: " + (e && e.message ? e.message : e);
+    return null;
+  });
+}
+// Before the first download: with no token from anywhere, ask (cancelling still tries).
+function _sam3EnsureHfToken() {
+  if (_sam3ModelReady || _sam3HfSource !== "none" || _sam3HfChosen()) return Promise.resolve();
+  return sam3ChooseHfToken();
+}
+sam3RefreshHfToken();
+
+// ── Source toggle ────────────────────────────────────────────
+function sam3SourceChanged() {
+  var type = document.getElementById("sam3-source-type").value;
+  document.getElementById("sam3-folder-group").style.display = type === "folder" ? "" : "none";
+  document.getElementById("sam3-table-group").style.display = type === "table" ? "" : "none";
+  document.getElementById("sam3-alias-area").style.display = type === "folder" ? "" : "none";
+  sam3CheckTableAgainstRunTarget();
+}
+
+// Selection-time data check against the Hub's "Run on:" target: warn the moment a table is picked
+// (or the target flips), not when the run is submitted.
+function sam3CheckTableAgainstRunTarget() {
+  var note = document.getElementById("sam3-run-target-data-note");
+  if (!note) return;
+  var url = document.getElementById("sam3-table-url").value.trim();
+  var isTable = document.getElementById("sam3-source-type").value === "table";
+  var target = API.getRunTarget();
+  if (!isTable || !url || !target || target.target !== "node") { note.style.display = "none"; return; }
+  API.run.checkTable(url).then(function(verdict) {
+    if (document.getElementById("sam3-table-url").value.trim() !== url) return;  // stale
+    var notes = (verdict && verdict.notes) || [];
+    if (verdict && verdict.ok && !notes.length) { note.style.display = "none"; return; }
+    note.textContent = (verdict && verdict.ok ? "⚠️ " : "❌ This will NOT run on the GPU node: ") + notes.join(" ");
+    note.style.color = verdict && verdict.ok ? "var(--warning, #d97706)" : "var(--error, #dc2626)";
+    note.style.display = "";
+  }).catch(function() { note.style.display = "none"; });
+}
+API.lifecycle.onDispose(API.onRunTargetChange(sam3CheckTableAgainstRunTarget));
+function sam3ReadLabels() {
+  var url = document.getElementById("sam3-table-url").value.trim(); if (!url) return Promise.resolve();
+  return _sam3Post("/api/plugins/sam3/read-labels", { table_url: url }).then(function(data) {
+    if (data.error) { sam3Log("Error: " + data.error); return; }
+    if (data.labels && data.labels.length > 0) {
+      _sam3Labels = []; _sam3ColorIndex = 0;
+      data.labels.forEach(function(n) { _sam3Labels.push({ name: n, color: _sam3NextColor() }); });
+      sam3RenderLabels();
+      if (data.modality) document.getElementById("sam3-modality").value = data.modality;
+      sam3Log("Read " + data.labels.length + " labels: " + data.labels.join(", "));
+    } else { sam3Log("No labels found in table schema"); }
+  }).catch(function(e) { sam3Log("Error: " + e); });
+}
+
+// ── Presets: the form in and out ─────────────────────────────
+// The SDK's preset bar owns the saved setups (SDK guide → Presets); a run never saves one.
+function sam3DefaultFormData() {
+  return {
+    source_type: "folder", folder: "", table_url: "", labels: [], modality: "segmentation", confidence: 0.2,
+    project_name: "", dataset_name: "train", table_name: "initial", embedding_dim: 2, device: "cuda",
+  };
+}
+
+// The table the plugin was opened with (?table= or ?train=, or the action button's table). It
+// replaces the preset's source for the page's life.
+function sam3ContextInputs() {
+  var q = new URLSearchParams(window.location.search);
+  var table = q.get("table") || q.get("train") || "";
+  var ctx = API.context || {};
+  if (!table && ctx.resourceUrls && ctx.resourceUrls.length) table = ctx.resourceUrls[0];
+  return table ? { source_type: "table", folder: "", table_url: table } : null;
+}
+
+// The name a new preset gets unless the person types one: "fish, person segmentation · 2026-10-27".
+function sam3AutoName(values) {
+  var d = new Date();
+  var dateStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  var names = (values.labels || []).map(function(l) { return l.name; }).filter(Boolean).slice(0, 3).join(", ");
+  return (names || "SAM3") + " " + (values.modality || "segmentation") + " \u00b7 " + dateStr;
+}
+
+// What the list shows after a preset's name: "2 labels, segmentation".
+function sam3PresetSummary(values) {
+  var n = (values.labels || []).length;
+  return [n ? n + " label" + (n !== 1 ? "s" : "") : "", values.modality];
+}
+
+function sam3CollectFormData() {
+  return {
+    source_type: document.getElementById("sam3-source-type").value,
+    folder: document.getElementById("sam3-folder").value.trim(),
+    table_url: document.getElementById("sam3-table-url").value.trim(),
+    labels: _sam3Labels.map(function(l) { return { name: l.name, color: l.color }; }),
+    modality: document.getElementById("sam3-modality").value,
+    confidence: parseFloat(document.getElementById("sam3-confidence").value),
+    project_name: document.getElementById("sam3-project-name").value.trim(),
+    dataset_name: document.getElementById("sam3-dataset-name").value.trim(),
+    table_name: document.getElementById("sam3-table-name").value.trim(),
+    embedding_dim: parseInt(document.getElementById("sam3-embed-dim").value),
+    device: document.getElementById("sam3-device").value,
+  };
+}
+
+// Fill the form from a preset's values. A table the plugin was opened with brings its own labels
+// when the preset has none, so the promise resolves once they are read.
+function sam3ApplyFormData(values) {
+  values = values || {};
+  document.getElementById("sam3-source-type").value = values.source_type || "folder"; sam3SourceChanged();
+  document.getElementById("sam3-folder").value = values.folder || "";
+  document.getElementById("sam3-table-url").value = values.table_url || "";
+  sam3CheckTableAgainstRunTarget();
+  _sam3Labels = (values.labels || []).map(function(l) { return { name: l.name, color: l.color }; });
+  _sam3ColorIndex = _sam3Labels.length;
+  sam3RenderLabels();
+  document.getElementById("sam3-modality").value = values.modality || "segmentation";
+  var conf = values.confidence != null ? Number(values.confidence) : 0.2;
+  document.getElementById("sam3-confidence").value = conf.toFixed(2);
+  document.getElementById("sam3-conf-value").textContent = conf.toFixed(2);
+  document.getElementById("sam3-project-name").value = values.project_name || "";
+  document.getElementById("sam3-dataset-name").value = values.dataset_name || "train";
+  document.getElementById("sam3-table-name").value = values.table_name || "initial";
+  document.getElementById("sam3-embed-dim").value = String(values.embedding_dim || 2);
+  document.getElementById("sam3-device").value = values.device || "cuda";
+  _tlcSyncAliasFromForm("sam3", "sam3-project-name", "sam3-folder");
+  sam3Gate();
+  if (values.source_type === "table" && values.table_url && !_sam3Labels.length) return sam3ReadLabels();
+}
+
+function sam3InitPresets() {
+  sam3Presets = _tlcPluginPresets({
+    pluginId: "sam3",
+    apiPath: "/api/plugins/sam3/configs",
+    mount: "sam3-presets",
+    formRoot: "sam3-page",
+    collect: sam3CollectFormData,
+    apply: sam3ApplyFormData,
+    defaults: sam3DefaultFormData,
+    inputs: ["source_type", "folder", "table_url"],
+    contextInputs: sam3ContextInputs,
+    autoName: sam3AutoName,
+    summary: sam3PresetSummary,
+    legacyKey: _SAM3_STORAGE_KEY,
+  });
+  return sam3Presets.init();
+}
+
+// ── Viewer: zoom / pan ───────────────────────────────────────
+function _vUpdateTransform() {
+  if (!_vImg) return;
+  _vImg.style.transform = "translate(" + _vX + "px," + _vY + "px) scale(" + _vScale + ")";
+  document.getElementById("sam3-zoom-label").textContent = Math.round(_vScale * 100) + "%";
+}
+function sam3ViewerZoom(factor, cx, cy) {
+  if (!_vImg) return;
+  var vp = document.getElementById("sam3-viewer-viewport");
+  if (cx === undefined) { cx = vp.clientWidth / 2; cy = vp.clientHeight / 2; }
+  var oldScale = _vScale;
+  _vScale = Math.max(0.1, Math.min(20, _vScale * factor));
+  var ratio = _vScale / oldScale;
+  _vX = cx - ratio * (cx - _vX);
+  _vY = cy - ratio * (cy - _vY);
+  _vUpdateTransform();
+}
+function sam3ViewerFit() {
+  if (!_vImg) return;
+  var vp = document.getElementById("sam3-viewer-viewport");
+  var sw = vp.clientWidth / _vNatW, sh = vp.clientHeight / _vNatH;
+  _vScale = Math.min(sw, sh, 1) * 0.95;
+  _vX = (vp.clientWidth - _vNatW * _vScale) / 2;
+  _vY = (vp.clientHeight - _vNatH * _vScale) / 2;
+  _vUpdateTransform();
+}
+function sam3ViewerReset() {
+  if (!_vImg) return;
+  var vp = document.getElementById("sam3-viewer-viewport");
+  _vScale = 1;
+  _vX = (vp.clientWidth - _vNatW) / 2;
+  _vY = (vp.clientHeight - _vNatH) / 2;
+  _vUpdateTransform();
+}
+(function() {
+  var vp = document.getElementById("sam3-viewer-viewport");
+  vp.addEventListener("mousedown", function(e) {
+    if (!_vImg) return; e.preventDefault();
+    _vDragging = true; _vStartX = e.clientX; _vStartY = e.clientY; _vStartPanX = _vX; _vStartPanY = _vY;
+    vp.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", function(e) {
+    if (!_vDragging) return;
+    _vX = _vStartPanX + (e.clientX - _vStartX);
+    _vY = _vStartPanY + (e.clientY - _vStartY);
+    _vUpdateTransform();
+  });
+  window.addEventListener("mouseup", function() {
+    if (_vDragging) { _vDragging = false; vp.classList.remove("dragging"); }
+  });
+  vp.addEventListener("wheel", function(e) {
+    if (!_vImg) return; e.preventDefault();
+    var rect = vp.getBoundingClientRect();
+    var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    sam3ViewerZoom(factor, cx, cy);
+  }, { passive: false });
+})();
+
+function sam3ViewerSetImage(dataUrl) {
+  var vp = document.getElementById("sam3-viewer-viewport");
+  var placeholder = document.getElementById("sam3-viewer-placeholder");
+  if (placeholder) placeholder.style.display = "none";
+  var img = new Image();
+  img.onload = function() {
+    _vImg = img; _vNatW = img.naturalWidth; _vNatH = img.naturalHeight;
+    img.style.cssText = "position:absolute;top:0;left:0;transform-origin:0 0;max-width:none;max-height:none";
+    vp.innerHTML = ""; vp.appendChild(img);
+    sam3ViewerFit();
+  };
+  img.src = dataUrl;
+}
+
+// ── What can run yet (PBI 19074) ─────────────────────────────
+// Preview, Recalculate Same and Create are disabled while they cannot run, and say why in their
+// tooltip; Preview's and Create's reasons also show on the line under them. Each blocker returns
+// the first thing to do, or "" when the action can run.
+function _sam3Val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ""; }
+function _sam3IsTable() { return document.getElementById("sam3-source-type").value === "table"; }
+// The images a preview reads: the table or the folder, whichever the source says.
+function _sam3SourceKey() {
+  var value = _sam3IsTable() ? _sam3Val("sam3-table-url") : _sam3Val("sam3-folder");
+  return value ? (_sam3IsTable() ? "table:" : "folder:") + value : "";
+}
+
+function sam3PreviewBlocker(sameImage) {
+  var enable = " to enable " + (sameImage ? "Recalculate Same." : "Preview Random Image.");
+  if (!_sam3Labels.length) return "Add a label" + enable;
+  if (_sam3IsTable() ? !_sam3Val("sam3-table-url") : !_sam3Val("sam3-folder")) {
+    return (_sam3IsTable() ? "Choose a table" : "Enter a folder path") + enable;
+  }
+  if (_sam3PreviewBusy) return "Wait while the preview runs" + enable;
+  // The image it recalculates belongs to the source it was found in.
+  if (sameImage && _sam3SourceKey() !== _sam3LastPreviewSource) {
+    return "Preview a random image from this " + (_sam3IsTable() ? "table" : "folder") + enable;
+  }
+  return "";
+}
+
+function sam3CreateBlocker() {
+  var enable = " to enable Create Table & Run Prediction.";
+  if (!_sam3Labels.length) return "Add a label" + enable;
+  if (!_sam3Val("sam3-project-name")) return "Enter a 3LC project" + enable;
+  if (_sam3IsTable()) {
+    if (!_sam3Val("sam3-table-url")) return "Choose a table in Setup" + enable;
+  } else {
+    if (!_sam3Val("sam3-folder")) return "Enter a folder path in Setup" + enable;
+    // The project is in cloud storage and the folder on a local disk: the alias card says so in full.
+    if (_tlcAliasLocationError("sam3")) return "Choose an image folder in cloud storage (see URL alias)" + enable;
+  }
+  if (_sam3JobBusy) return "Wait for the SAM3 job to finish" + enable;
+  return "";
+}
+
+function _sam3GateButton(id, reason, whyId) {
+  var btn = document.getElementById(id);
+  btn.disabled = !!reason;  // busy is one of the reasons
+  btn.title = reason;
+  if (whyId) document.getElementById(whyId).textContent = reason;  // the line keeps its height when empty
+}
+
+// Runs on every input and change under the page, after anything that fills the form in code, and
+// when a preview or a job starts and ends.
+function sam3Gate() {
+  _sam3GateButton("sam3-preview-btn", sam3PreviewBlocker(false), "sam3-preview-why");
+  _sam3GateButton("sam3-preview-same-btn", sam3PreviewBlocker(true));
+  _sam3GateButton("sam3-create-btn", sam3CreateBlocker(), "sam3-create-why");
+}
+
+// ── Preview ──────────────────────────────────────────────────
+function sam3RunPreview(sameImage) {
+  if (sam3PreviewBlocker(sameImage)) { sam3Gate(); return; }
+  var sourceType = document.getElementById("sam3-source-type").value;
+  var source = _sam3SourceKey();
+  var body = {
+    labels: _sam3LabelNames(), label_colors: _sam3LabelColors(),
+    modality: document.getElementById("sam3-modality").value,
+    confidence: parseFloat(document.getElementById("sam3-confidence").value),
+    device: document.getElementById("sam3-device").value,
+  };
+  if (sameImage) body.image_path = _sam3LastPreviewPath;
+  if (sourceType === "folder") body.folder = _sam3Val("sam3-folder");
+  else body.table_url = _sam3Val("sam3-table-url");
+  var btn = document.getElementById("sam3-preview-btn"), sameBtn = document.getElementById("sam3-preview-same-btn");
+  _sam3PreviewBusy = true; sam3Gate(); btn.textContent = "Checking images...";
+
+  function restoreButtons() {
+    _sam3PreviewBusy = false; btn.textContent = "Preview Random Image"; sam3Gate();
+  }
+
+  function runPreview() {
+    sam3Log("Running preview...");
+    btn.textContent = "Previewing...";
+    _sam3Post("/api/plugins/sam3/preview", body, { timeout: 120000 }).then(function(data) {
+      if (data.error) { restoreButtons(); sam3Log("Error: " + data.error); return; }
+      _sam3LastPreviewPath = data.image_path; _sam3LastPreviewSource = source; sameBtn.style.display = "";
+      restoreButtons();
+      sam3ViewerSetImage("data:image/png;base64," + data.preview);
+      document.getElementById("sam3-preview-detection-count").textContent = data.num_detections + " detection" + (data.num_detections !== 1 ? "s" : "");
+      document.getElementById("sam3-viewer-footer").style.display = "";
+      document.getElementById("sam3-preview-filename").textContent = data.image_path.split("/").pop();
+      sam3Log("Preview: " + data.num_detections + " detections in " + data.image_path.split("/").pop());
+    }).catch(function(e) {
+      restoreButtons();
+      sam3Log("Error: " + (e && e.message ? e.message : e));
+    });
+  }
+
+  // Warm the model FIRST via short polls — the initial multi-GB download outlives
+  // any single request (browser timeout locally, proxy idle window on a node).
+  // A reply without a warm-up state is not "still warming": it is a worker that has no
+  // /model-warmup route (an older plugin build on a remote node answers 404), and a run of
+  // failed polls is a worker that is gone. Both stop the loop with a reason in the log.
+  var polls = 0, failures = 0;
+  function pollModel() {
+    polls += 1;
+    if (polls > 240) { restoreButtons(); sam3Log("Model warmup timed out (20 min)."); return; }
+    _sam3Post("/api/plugins/sam3/model-warmup", { device: body.device, retry: polls === 1 }, { timeout: 20000 }).then(function(state) {
+      if (!state || typeof state.state !== "string") {
+        restoreButtons();
+        sam3Log("Model warmup: the worker did not answer /model-warmup (" + (state && (state.detail || state.error) || "unexpected reply") + "). " +
+                "On a remote node this usually means the node runs an older SAM3 plugin build than this one.");
+        return;
+      }
+      failures = 0;
+      if (state.state === "ready") { runPreview(); return; }
+      if (state.state === "failed") { restoreButtons(); sam3Log("Model load failed: " + (state.detail || "")); return; }
+      btn.textContent = "Loading model" + ".".repeat(1 + (polls % 3));
+      // The worker says whether it is downloading the weights or loading them from its cache.
+      if (polls === 1) sam3Log("SAM3 model: " + (state.detail || "loading") + "...");
+      setTimeout(pollModel, 5000);
+    }).catch(function(e) {
+      failures += 1;
+      if (failures >= 3) { restoreButtons(); sam3Log("Model warmup: no answer from the worker after " + failures + " attempts (" + (e && e.message ? e.message : e) + ")."); return; }
+      setTimeout(pollModel, 5000);
+    });
+  }
+  // Look for the images FIRST, on the worker that will read them (/check-source is a node route,
+  // like /preview): a folder that is not there, or holds no images, is reported in seconds instead
+  // of after the model download. It also hands back the image to preview, so the folder is listed
+  // once. A worker without the route (an older SAM3 build on a node answers 404) skips the check.
+  function checkSource() {
+    if (body.image_path) return Promise.resolve(true);  // "Recalculate Same": already found there
+    var check = body.table_url ? { table_url: body.table_url } : { folder: body.folder };
+    return _sam3Post("/api/plugins/sam3/check-source", check, { timeout: 120000 }).then(function(data) {
+      if (!body.image_path && data && data.image_path) body.image_path = data.image_path;
+      return true;
+    }).catch(function(e) {
+      if (e && e.status === 404) return true;
+      restoreButtons();
+      sam3Log("Error: " + (e && e.message ? e.message : e));
+      return false;
+    });
+  }
+  checkSource().then(function(ok) {
+    if (!ok) return;
+    btn.textContent = "Loading SAM3...";
+    _sam3EnsureHfToken().then(pollModel);
+  });
+}
+
+// ── Create & Predict (combined) ─────────────────────────────
+function sam3CreateAndPredict() {
+  if (sam3CreateBlocker()) { sam3Gate(); return; }
+  var sourceType = document.getElementById("sam3-source-type").value;
+  var projectName = document.getElementById("sam3-project-name").value.trim();
+  var datasetName = document.getElementById("sam3-dataset-name").value.trim() || "train";
+  var tableName = document.getElementById("sam3-table-name").value.trim() || "initial";
+
+  var runName = document.getElementById("sam3-run-name").value.trim();
+  var maxImagesEl = document.getElementById("sam3-max-images");
+  var maxImages = maxImagesEl.value ? parseInt(maxImagesEl.value) : 0;
+
+  var body = {
+    mode: "create_and_predict",
+    labels: _sam3LabelNames(), label_colors: _sam3LabelColors(),
+    modality: document.getElementById("sam3-modality").value, project_name: projectName,
+    dataset_name: datasetName, table_name: tableName,
+    confidence: parseFloat(document.getElementById("sam3-confidence").value),
+    embedding_dim: parseInt(document.getElementById("sam3-embed-dim").value),
+    device: document.getElementById("sam3-device").value,
+    config_id: sam3Presets ? sam3Presets.presetId() : "",  // set while the form is unchanged from a preset
+    run_name: runName,
+    max_images: maxImages,
+  };
+
+  if (sourceType === "table") {
+    body.source_table_url = _sam3Val("sam3-table-url");
+  } else {
+    var folder = _sam3Val("sam3-folder");
+    body.folder = folder;
+    // Only these alias fields: sam3 never copies the data itself, so the card's alias_copy_* are not sent.
+    // alias_folder is always filled in: it is the durable location the persisted alias points at,
+    // while the Hub may rewrite `folder` to a copy on a GPU node for this run.
+    var alias = _tlcGetAliasValues("sam3");
+    body.alias_enabled = alias.alias_enabled;
+    body.alias_token = alias.alias_token;
+    body.alias_folder = alias.alias_folder || folder;
+    // The Hub may rewrite `folder` for one run; this says where it was picked, so an alias set on a
+    // folder above it keeps the subfolders in the table's paths.
+    body.alias_source_folder = alias.alias_source_folder || folder;
+  }
+
+  sam3Log("Creating table & queuing prediction...");
+  _sam3SubmitJob(body, "Job submitted — table will be created, then prediction runs automatically",
+    "Creating table → prediction will start automatically");
+}
+
+// ── Jobs: the generic job channel via API.jobs, plus the plugin's own events ──
+// The host relays ctx.emit() events on the plugin's namespace ("/sam3") and the
+// generic lifecycle (status / progress / run_url / error) as job_update on the same
+// namespace. API.jobs (the SDK's frame runtime) owns the socket; this fragment only
+// subscribes. The job page is a launcher: the Queue page is the durable view, so on
+// mount the fragment re-attaches to a live sam3 job from the host's job list.
+var _SAM3_NS = "/sam3";
+var _sam3Untrack = null;
+var _sam3LastTerminalJobId = null;
+
+function _sam3RenderProgress(percent, label, timing) {
+  var indeterminate = percent === -1;
+  var pct = indeterminate ? 0 : Math.min(100, Math.max(0, Math.round(percent || 0)));
+  document.getElementById("sam3-progress-area").style.display = "";
+  document.getElementById("sam3-no-progress").style.display = "none";
+  document.getElementById("sam3-progress-label").textContent = label || "";
+  document.getElementById("sam3-progress-pct").textContent = indeterminate ? "" : pct + "%";
+  document.getElementById("sam3-progress-bar").style.width = pct + "%";
+  var t = timing || {}, parts = [];
+  if (t.elapsed_s !== undefined) parts.push("Elapsed: " + _sam3FmtDuration(t.elapsed_s));
+  if (t.eta_s !== undefined) parts.push("ETA: " + _sam3FmtDuration(t.eta_s));
+  if (t.avg_step_s !== undefined) parts.push("Per " + (t.step_label || "step") + ": " + _sam3FmtDuration(t.avg_step_s));
+  document.getElementById("sam3-timing").textContent = parts.join(" | ");
+}
+function _sam3SetRunning(job, text) {
+  _sam3CreateJobId = job.id || _sam3CreateJobId;
+  document.getElementById("sam3-running-banner").style.display = "flex";
+  document.getElementById("sam3-running-text").textContent = text ||
+    ((job.title || "SAM3 job") + (job.subtitle ? " — " + job.subtitle : "") + ". Watch it in the Queue.");
+  _sam3JobBusy = true; sam3Gate();
+  document.getElementById("sam3-project-link-a").style.display = "none";
+}
+function _sam3SetIdle() {
+  _sam3CreateJobId = null;
+  document.getElementById("sam3-running-banner").style.display = "none";
+  _sam3JobBusy = false; sam3Gate();
+  if (_sam3Untrack) { _sam3Untrack(); _sam3Untrack = null; }
+}
+function _sam3OnJobUpdate(job) {
+  if (!job || (_sam3CreateJobId && job.id !== _sam3CreateJobId)) return;
+  if (job.status === "queued" || job.status === "running") {
+    document.getElementById("sam3-running-text").textContent =
+      (job.title || "SAM3 job") + (job.subtitle ? " — " + job.subtitle : "") + ". Watch it in the Queue.";
+  }
+  if (job.progress) _sam3RenderProgress(job.progress.percent, job.progress.label, job.progress.timing);
+}
+function _sam3OnJobDone(job) {
+  _sam3LastTerminalJobId = job.id || null;
+  var status = document.getElementById("sam3-create-status");
+  if (job.status === "cancelled") {
+    sam3Log("Job cancelled");
+    status.textContent = "Cancelled";
+  } else {
+    sam3Log("Job completed" + (job.run_url ? " — result: " + job.run_url : ""));
+    status.textContent = job.run_url ? "Completed — result: " + job.run_url : "Completed";
+    _sam3RenderProgress(100, "Completed", null);
+  }
+  // Mirror the Queue card: Open goes to the project page the result lives in.
+  var link = document.getElementById("sam3-project-link-a");
+  var projName = job.project_name || document.getElementById("sam3-project-name").value.trim();
+  if (job.run_url && projName) {
+    link.href = "/projects/" + encodeURIComponent(projName);
+    link.title = job.run_url;
+    link.style.display = "";
+  }
+  _sam3SetIdle();
+}
+function _sam3OnJobError(job) {
+  _sam3LastTerminalJobId = (job && job.id) || null;
+  var msg = (job && (job.error || job.subtitle)) || "Job failed";
+  sam3Log("Error: " + msg);
+  document.getElementById("sam3-create-status").textContent = "Failed: " + msg;
+  _sam3RenderClassStats(null);
+  _sam3SetIdle();
+}
+var _sam3JobHandlers = { onUpdate: _sam3OnJobUpdate, onDone: _sam3OnJobDone, onError: _sam3OnJobError };
+
+function _sam3SubmitJob(body, logMsg, statusMsg) {
+  _sam3CreateJobId = null;
+  _sam3RenderClassStats(null);
+  _sam3JobBusy = true; sam3Gate();  // until the job ends; a refused start ends it in onError
+  API.jobs.run("sam3", body, _sam3JobHandlers).then(function(resp) {
+    if (!resp || resp.error || !resp.job_id) return;   // onError already reported it
+    sam3Log(logMsg + ": " + resp.job_id);
+    // A job that finished before the /run response already fired its terminal handler.
+    if (_sam3LastTerminalJobId === resp.job_id) return;
+    _sam3SetRunning({ id: resp.job_id, title: "SAM3", subtitle: "queued" });
+    document.getElementById("sam3-create-status").textContent = statusMsg;
+  }).catch(function(e) { sam3Log("Error: " + (e && e.message ? e.message : e)); _sam3SetIdle(); });
+}
+
+// Seed-on-mount: re-attach to a sam3 job that is already queued/running.
+function _sam3SeedFromHost() {
+  API.jobs.list("sam3").then(function(jobs) {
+    var live = jobs.filter(function(j) { return j.status === "queued" || j.status === "running"; });
+    if (!live.length) return;
+    var job = live[0];
+    _sam3SetRunning(job);
+    if (job.progress) _sam3RenderProgress(job.progress.percent, job.progress.label, job.progress.timing);
+    document.getElementById("sam3-create-status").textContent = "A SAM3 job is already running";
+    sam3Log("Re-attached to running job " + job.id);
+    _sam3Untrack = API.jobs.track(_SAM3_NS, job.id, _sam3JobHandlers);
+  }).catch(function() {});
+}
+
+// The plugin's own events (ctx.emit) — richer than the generic schema carries.
+// Leaving the page disposes it, not the job: these only stop listening.
+API.lifecycle.onDispose(API.jobs.on(_SAM3_NS, "sam3_log", function(data) { sam3Log(data.message); }));
+API.lifecycle.onDispose(API.jobs.on(_SAM3_NS, "sam3_progress", function(data) {
+  _sam3RenderProgress(data.percent, data.label, data.timing);
+  _sam3RenderClassStats(data.class_avg, data.phase, data.phase_label);
+}));
+
+// ── Init ─────────────────────────────────────────────────────
+sam3RenderLabels();
+_sam3SeedFromHost();
+(function() {
+  // ── Data source init ─────────────────────────────────────
+  // SDK shared picker for the image folder: the rendered text input keeps the id
+  // "sam3-folder", so config save/restore and the alias auto-update keep working.
+  (function initFolderPicker() {
+    var ds = document.getElementById("sam3-folder-ds");
+    if (ds) {
+      ds.innerHTML = _tlcDataSourceHtml("sam3-folder", { placeholder: "/path/to/images", mode: "folder" });
+      document.getElementById("sam3-folder").required = true;
+      _tlcBindDataSource("sam3-folder", _sam3ComputeUrl, "sam3", { mode: "folder" });
+    }
+  })();
+
+  // ── Alias UI init ────────────────────────────────────────
+  (function initAliasUI() {
+    var area = document.getElementById("sam3-alias-area");
+    if (area) {
+      area.innerHTML = _tlcAliasSettingsHtml("sam3", "", "");
+      _tlcBindAliasToggle("sam3");
+      // No copy offer: sam3 reads the folder where it is and never copies it, so an offer to copy
+      // it next to the table would promise something the run does not do. Moving data to a GPU
+      // node is the Hub's run dialog's job. (Newer SDKs make the offer opt-in; this keeps older
+      // ones from showing it.)
+      _tlcBindAliasAutoUpdate("sam3", "sam3-project-name", "sam3-folder", "", "", { copyOffer: false });
+      // The project root arrives later and decides whether a local folder may be aliased.
+      _tlcDefaultProjectRoot().then(sam3Gate);
+    }
+  })();
+
+  // What can run yet: typing, picking and Browse all end in input or change events under the page.
+  var page = document.getElementById("sam3-page");
+  page.addEventListener("input", sam3Gate);
+  page.addEventListener("change", sam3Gate);
+  sam3Gate();
+
+  // The preset bar opens the form: as it was last left in this browser, else on Default
+  // settings, with the table the plugin was opened with (sam3ContextInputs) in place of its own.
+  sam3InitPresets();
+})();

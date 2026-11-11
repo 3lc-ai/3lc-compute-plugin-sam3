@@ -76,8 +76,14 @@ class SAM3Plugin(ComputePlugin):
                 mode-specific request fields.
 
         """
+        from tlc_plugin_sam3.job_contract import normalize
+
+        try:
+            ctx.params.update(normalize(ctx.params))
+        except ValueError as error:
+            ctx.fail(str(error))
         params = ctx.params
-        mode = str(params.get("mode", "predict") or "predict")
+        mode = params["mode"]
         config_id = (str(params.get("config_id", "") or "").strip()) or None
         # The root the host stamped for this job; None (an SDK without the property) keeps tlc's default.
         root = ctx.project_root_url or None
@@ -222,6 +228,7 @@ def _run_predict(ctx: JobContext, table_url: str = "", *, root_url: str | None =
         run_name=run_name,
         description=f"SAM3 predictions: {', '.join(labels)} ({modality})",
     )
+    ctx.result(str(run.url))
 
     # Prediction loop
     all_predictions: list[Any] = []

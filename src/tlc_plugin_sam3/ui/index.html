@@ -1,0 +1,223 @@
+<!-- Copyright 2026 3LC Inc. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<style>{{asset:styles.css}}</style>
+
+<div class="plugin-page plugin-workbench" id="sam3-page">
+<!-- Workflow heading -->
+<header class="plugin-page-heading">
+  <h1>SAM3</h1>
+  <p>Preview labels on an image, then apply them to your dataset.</p>
+</header>
+
+<!-- ── Hugging Face token: a Connection the Hub keeps ────────── -->
+<div class="plugin-info-banner" id="sam3-hf-card">
+  <span style="display:inline-flex"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="14" height="7" rx="2"/><circle cx="10" cy="6" r="4"/><path d="M10 10v3"/></svg></span>
+  <span id="sam3-hf-label" style="flex:1">Hugging Face token…</span>
+  <button class="btn btn-ghost btn-sm" id="sam3-hf-choose-btn" onclick="sam3ChooseHfToken()">Choose…</button>
+  <span id="sam3-hf-status" class="text-sm"></span>
+</div>
+
+<!-- ── Presets: the SDK's preset bar renders here (_tlcPluginPresets) ── -->
+<div id="sam3-presets"></div>
+
+<!-- ── Step 1: Setup + Preview side by side ───────────────── -->
+<div class="sam3-layout">
+  <div>
+    <div class="card" style="height:100%;display:flex;flex-direction:column">
+      <div class="card-header">
+        <div class="card-title" style="font-size:13px"><span class="plugin-section-number">1</span> Data &amp; prompts</div>
+      </div>
+      <div class="card-body" style="flex:1">
+
+        <!-- Source -->
+        <div class="plugin-form-grid">
+          <div class="form-group">
+            <label class="form-label">Image Source</label>
+            <select id="sam3-source-type" class="form-select" onchange="sam3SourceChanged()">
+              <option value="folder">Image Folder</option>
+              <option value="table">3LC Table</option>
+            </select>
+          </div>
+          <div class="form-group" id="sam3-folder-group">
+            <label class="form-label required" for="sam3-folder">Folder Path</label>
+            <!-- SDK data-source widget (rendered at init): text input keeps id sam3-folder,
+                 plus a Browse… panel backed by the SDK's /browse route. -->
+            <div id="sam3-folder-ds"></div>
+          </div>
+          <div class="form-group" id="sam3-table-group" style="display:none">
+            <label class="form-label required" for="sam3-table-url">Table URL</label>
+            <!-- The Hub's table field, the same one YOLO, timm, rf-detr and the importer use: this
+                 field was a bare box you had to paste a 3lc:// URL into (Paul, 2026-09-07). Browse…,
+                 or a double-click in the empty field, opens Browse Tables; the plugin needs Hub 1.2. -->
+            <tlc-table-field id="sam3-table-url" placeholder="Paste URL or click Browse…" required
+                             oninput="sam3CheckTableAgainstRunTarget()"></tlc-table-field>
+            <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="sam3ReadLabels()">Read Labels from Table</button>
+            <div id="sam3-run-target-data-note" class="form-help" style="display:none"></div>
+          </div>
+        </div>
+        <div class="form-help">Labeling processes every image in the selected source.</div>
+
+        <!-- Labels with color -->
+        <div class="form-group">
+          <!-- Required until a label is added: sam3RenderLabels sets the input's `required`, so it carries
+               the Hub's red wash only while there are none. -->
+          <label class="form-label required" for="sam3-label-input">Labels <span class="text-muted" style="font-weight:400">(text prompts)</span></label>
+          <div class="plugin-labels-wrap" id="sam3-labels-wrap"></div>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="sam3-label-input" class="form-control" placeholder="e.g. fish, person, car..."
+              style="flex:1" onkeydown="if(event.key==='Enter'){sam3AddLabel();event.preventDefault();}">
+            <button class="btn btn-ghost btn-sm" onclick="sam3AddLabel()">Add</button>
+          </div>
+          <div class="form-help">Add a name or short description for each object class, such as “fish” or “person walking”.</div>
+        </div>
+
+        <!-- Modality + Confidence -->
+        <div class="plugin-form-grid">
+          <div class="form-group">
+            <label class="form-label">Modality</label>
+            <select id="sam3-modality" class="form-select">{{field:modality.options}}</select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confidence: <span id="sam3-conf-value">{{field:confidence.display}}</span></label>
+            <input type="range" id="sam3-confidence" min="{{field:confidence.min}}" max="{{field:confidence.max}}" step="{{field:confidence.step}}" value="{{field:confidence.default}}"
+              style="width:100%;margin-top:4px" oninput="document.getElementById('sam3-conf-value').textContent=parseFloat(this.value).toFixed(2)">
+          </div>
+        </div>
+
+        <!-- Preview buttons -->
+        <div style="display:flex;gap:8px;margin-top:2px">
+          <button class="btn btn-plugin" id="sam3-preview-btn" onclick="sam3RunPreview()" disabled
+                  aria-describedby="sam3-preview-why">Preview Random Image</button>
+          <button class="btn btn-ghost btn-sm" id="sam3-preview-same-btn" onclick="sam3RunPreview(true)" style="display:none">
+            Recalculate Same
+          </button>
+        </div>
+        <div id="sam3-preview-why" class="text-sm text-muted sam3-why"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Preview Viewer (inside grid, same row as step 1) -->
+  <div>
+    <div class="plugin-viewer-card" id="sam3-viewer-card" style="height:100%;display:flex;flex-direction:column">
+      <div class="plugin-viewer-header">
+        <h3>Preview</h3>
+        <span id="sam3-preview-detection-count" class="text-sm text-muted"></span>
+      </div>
+      <div class="plugin-viewer-toolbar" style="padding:4px 10px;border-bottom:1px solid var(--border)">
+        <button onclick="sam3ViewerZoom(1.3)" title="Zoom in">+</button>
+        <button onclick="sam3ViewerZoom(1/1.3)" title="Zoom out">&minus;</button>
+        <span class="zoom-label" id="sam3-zoom-label">100%</span>
+        <span class="sep"></span>
+        <button onclick="sam3ViewerFit()" title="Fit to view">Fit</button>
+        <button onclick="sam3ViewerReset()" title="Reset to 100%">1:1</button>
+      </div>
+      <div class="plugin-viewer-viewport" id="sam3-viewer-viewport" style="flex:1;min-height:300px;overflow:hidden;position:relative">
+        <div class="plugin-viewer-placeholder" id="sam3-viewer-placeholder">
+          <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="5"/><path d="M13 13l4 4"/></svg></span>
+          Add labels and click<br><em>Preview Random Image</em>
+        </div>
+      </div>
+      <div class="plugin-viewer-footer" id="sam3-viewer-footer" style="display:none">
+        <span id="sam3-preview-filename"></span>
+        <span id="sam3-preview-dims"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Step 2: Full width below ──────────────────────────────── -->
+<div style="margin-top:16px">
+    <!-- Create Table & Run Prediction -->
+    <div class="card mb-16">
+      <div class="card-header">
+        <div class="card-title" style="font-size:12px"><span class="plugin-section-number">2</span> Output &amp; labeling</div>
+      </div>
+      <div class="card-body">
+        <p class="text-sm text-muted" style="margin-bottom:10px">
+          Creates a 3LC table from the images, then automatically runs SAM3 prediction on all samples with UMAP embeddings.
+        </p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label required" for="sam3-project-name">3LC Project</label>
+            <input type="text" id="sam3-project-name" class="form-control" placeholder="MyProject" required>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Dataset Name</label>
+            <input type="text" id="sam3-dataset-name" class="form-control" value="{{field:dataset_name.default}}" placeholder="train">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Table Name</label>
+            <input type="text" id="sam3-table-name" class="form-control" value="{{field:table_name.default}}" placeholder="e.g. initial">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Run Name</label>
+            <input type="text" id="sam3-run-name" class="form-control" placeholder="Auto-generated if empty">
+          </div>
+        </div>
+        <!-- URL Alias settings (injected by shared JS) -->
+        <div id="sam3-alias-area"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:10px;margin-top:8px">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Max Images</label>
+            <input type="number" id="sam3-max-images" class="form-control" placeholder="All images" min="1">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Embeddings</label>
+            <select id="sam3-embed-dim" class="form-select">{{field:embedding_dim.options}}</select>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Device</label>
+            <select id="sam3-device" class="form-select">{{field:device.options}}</select>
+          </div>
+        </div>
+        <!-- Seeded from the host's job list on mount: a queued/running sam3 job replaces the
+             launch button with a compact running state (the Queue page is the durable view). -->
+        <div id="sam3-running-banner" class="plugin-info-banner" style="display:none;margin-bottom:10px">
+          <span class="plugin-status-running" style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600">Running</span>
+          <span id="sam3-running-text" class="text-sm" style="flex:1"></span>
+          <a href="/queue" class="btn btn-ghost btn-sm" onclick="API.nav.go('/queue');return false;">Open Queue</a>
+        </div>
+        <button class="btn btn-plugin" id="sam3-create-btn" onclick="sam3CreateAndPredict()" disabled
+                aria-describedby="sam3-create-why">Create table &amp; label images</button>
+        <div id="sam3-create-why" class="text-sm text-muted sam3-why"></div>
+        <div id="sam3-create-status" class="text-sm" style="margin-top:6px"></div>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="card mb-16">
+      <div class="card-header">
+        <div class="card-title" style="font-size:12px">Progress</div>
+      </div>
+      <div class="card-body">
+        <div id="sam3-progress-area" style="display:none">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span id="sam3-progress-label" class="text-sm" style="flex:1">Idle</span>
+            <a id="sam3-project-link-a" href="#" class="btn btn-sm btn-secondary" style="display:none"
+               onclick="API.nav.go(this.getAttribute('href'));return false;">Open</a>
+            <span id="sam3-progress-pct" class="text-sm" style="font-weight:600">0%</span>
+          </div>
+          <div class="plugin-progress-wrap">
+            <div id="sam3-progress-bar" class="plugin-progress-bar" style="width:0%"></div>
+          </div>
+          <div id="sam3-timing" class="text-sm text-muted" style="margin-top:3px"></div>
+          <div id="sam3-class-stats" class="text-sm text-muted" style="margin-top:4px"></div>
+        </div>
+        <div id="sam3-no-progress" class="text-sm text-muted">No active job.</div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="card mb-16">
+      <div class="card-header">
+        <div class="card-title" style="font-size:12px">Log</div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div id="sam3-log" class="plugin-log-area"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>{{asset:app.js}}</script>
