@@ -263,8 +263,6 @@ if (!API || !API.protocol) {
 }
 var _sam3ComputeUrl = API.getConfig("compute_service_url").replace(/\/$/, "");
 
-var _SAM3_STORAGE_KEY = "sam3_selected_config"; // the old config bar's key; the preset bar honours it once
-
 var _sam3DefaultColors = [
   "#64c8ff", "#78ffb4", "#c8a0ff", "#ffdc78",
   "#ff96c8", "#96f0e6", "#e6e68c", "#b4c8ff",
@@ -462,7 +460,9 @@ function sam3ContextInputs() {
   var table = q.get("table") || q.get("train") || "";
   var ctx = API.context || {};
   if (!table && ctx.resourceUrls && ctx.resourceUrls.length) table = ctx.resourceUrls[0];
-  return table ? { source_type: "table", folder: "", table_url: table } : null;
+  var project = ctx.projectName || q.get("project") || "";
+  return table ? { source_type: "table", folder: "", table_url: table, project_name: project }
+    : (project ? {project_name: project} : null);
 }
 
 // The name a new preset gets unless the person types one: "fish, person segmentation · 2026-10-27".
@@ -533,7 +533,6 @@ function sam3InitPresets() {
     contextInputs: sam3ContextInputs,
     autoName: sam3AutoName,
     summary: sam3PresetSummary,
-    legacyKey: _SAM3_STORAGE_KEY,
   });
   return sam3Presets.init();
 }
@@ -889,6 +888,7 @@ function _sam3SubmitJob(body, logMsg, statusMsg) {
   _sam3JobBusy = true; sam3Gate();  // until the job ends; a refused start ends it in onError
   API.jobs.run("sam3", body, _sam3JobHandlers).then(function(resp) {
     if (!resp || resp.error || !resp.job_id) return;   // onError already reported it
+    if (sam3Presets && typeof sam3Presets.submitted === "function") sam3Presets.submitted();
     sam3Log(logMsg + ": " + resp.job_id);
     // A job that finished before the /run response already fired its terminal handler.
     if (_sam3LastTerminalJobId === resp.job_id) return;
@@ -957,8 +957,7 @@ _sam3SeedFromHost();
   page.addEventListener("change", sam3Gate);
   sam3Gate();
 
-  // The preset bar opens the form: as it was last left in this browser, else on Default
-  // settings, with the table the plugin was opened with (sam3ContextInputs) in place of its own.
+  // Start fresh for external inputs, or resume a draft when opened without them.
   sam3InitPresets();
 })();
 </script>
