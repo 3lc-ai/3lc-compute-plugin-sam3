@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Derive the output project when the primary table changes; keep same-project settings, reset defaults across projects with Undo, and preserve explicit saved presets.
+
+
 Releases as 0.3.0: its page needs the isolated plugin frame (`[ui] frame_protocol = 1`) and
 SDK 0.7.
 
