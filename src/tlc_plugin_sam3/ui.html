@@ -48,7 +48,7 @@
         <div class="plugin-form-grid">
           <div class="form-group">
             <label class="form-label">Image Source</label>
-            <select id="sam3-source-type" class="form-select" onchange="sam3SourceChanged()">
+            <select id="sam3-source-type" class="form-select" onchange="sam3SourceChanged(); sam3OnTableChange()">
               <option value="folder">Image Folder</option>
               <option value="table">3LC Table</option>
             </select>
@@ -65,7 +65,7 @@
                  field was a bare box you had to paste a 3lc:// URL into (Paul, 2026-09-07). Browse…,
                  or a double-click in the empty field, opens Browse Tables; the plugin needs Hub 1.2. -->
             <tlc-table-field id="sam3-table-url" placeholder="Paste URL or click Browse…" required
-                             oninput="sam3CheckTableAgainstRunTarget()"></tlc-table-field>
+                             oninput="sam3OnTableChange()"></tlc-table-field>
             <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="sam3ReadLabels()">Read Labels from Table</button>
             <div id="sam3-run-target-data-note" class="form-help" style="display:none"></div>
           </div>
@@ -430,18 +430,46 @@ function sam3CheckTableAgainstRunTarget() {
   }).catch(function() { note.style.display = "none"; });
 }
 API.lifecycle.onDispose(API.onRunTargetChange(sam3CheckTableAgainstRunTarget));
-function sam3ReadLabels() {
-  var url = document.getElementById("sam3-table-url").value.trim(); if (!url) return Promise.resolve();
-  return _sam3Post("/api/plugins/sam3/read-labels", { table_url: url }).then(function(data) {
-    if (data.error) { sam3Log("Error: " + data.error); return; }
-    if (data.labels && data.labels.length > 0) {
-      _sam3Labels = []; _sam3ColorIndex = 0;
-      data.labels.forEach(function(n) { _sam3Labels.push({ name: n, color: _sam3NextColor() }); });
-      sam3RenderLabels();
-      if (data.modality) document.getElementById("sam3-modality").value = data.modality;
-      sam3Log("Read " + data.labels.length + " labels: " + data.labels.join(", "));
-    } else { sam3Log("No labels found in table schema"); }
-  }).catch(function(e) { sam3Log("Error: " + e); });
+var _sam3TableRead = 0, _sam3TableTimer = null, _sam3TableLoading = false, _sam3TableError = "";
+function sam3OnTableChange() {
+  _sam3TableRead++;
+  clearTimeout(_sam3TableTimer);
+  _sam3TableError = "";
+  _sam3TableLoading = _sam3IsTable() && !!_sam3Val("sam3-table-url");
+  sam3CheckTableAgainstRunTarget();
+  sam3Gate();
+  if (_sam3TableLoading) _sam3TableTimer = setTimeout(function() { sam3ReadTable(false); }, 500);
+}
+function sam3ReadLabels() { return sam3ReadTable(true); }
+function sam3ReadTable(replaceLabels, resolvedTable) {
+  var url = _sam3Val("sam3-table-url"), read = ++_sam3TableRead;
+  if (!url || !_sam3IsTable()) return Promise.resolve();
+  var current = function() { return read === _sam3TableRead && _sam3IsTable() && _sam3Val("sam3-table-url") === url; };
+  _sam3TableLoading = true; _sam3TableError = ""; sam3Gate();
+  return (resolvedTable && resolvedTable.url === url ? Promise.resolve(resolvedTable.info)
+    : _sam3Post("/api/plugins/sam3/read-labels", {table_url: url})).then(function(data) {
+    if (!current()) return;
+    if (!data || data.error) throw new Error((data && data.error) || "Could not read table");
+    var transition = sam3Presets && sam3Presets.tableResolved
+      ? sam3Presets.tableResolved(url, data) : Promise.resolve(false);
+    return transition.then(function(handled) {
+      if (handled || !current()) return;
+      _sam3TableLoading = false;
+      var project = document.getElementById("sam3-project-name");
+      if (!project.value.trim() && data.project_name) project.value = data.project_name;
+      if (replaceLabels || !_sam3Labels.length) {
+        _sam3Labels = []; _sam3ColorIndex = 0;
+        (data.labels || []).forEach(function(n) { _sam3Labels.push({name: n, color: _sam3NextColor()}); });
+        sam3RenderLabels();
+        if (data.modality) document.getElementById("sam3-modality").value = data.modality;
+      }
+      sam3Gate();
+    });
+  }).catch(function(e) {
+    if (!current()) return;
+    _sam3TableLoading = false; _sam3TableError = String(e);
+    sam3Log("Error: " + e); sam3Gate();
+  });
 }
 
 // ── Presets: the form in and out ─────────────────────────────
@@ -454,7 +482,7 @@ function sam3DefaultFormData() {
 }
 
 // The table the plugin was opened with (?table= or ?train=, or the action button's table). It
-// replaces the preset's source for the page's life.
+// starts a fresh setup; an explicit preset pick can restore a different source.
 function sam3ContextInputs() {
   var q = new URLSearchParams(window.location.search);
   var table = q.get("table") || q.get("train") || "";
@@ -497,7 +525,9 @@ function sam3CollectFormData() {
 
 // Fill the form from a preset's values. A table the plugin was opened with brings its own labels
 // when the preset has none, so the promise resolves once they are read.
-function sam3ApplyFormData(values) {
+function sam3ApplyFormData(values, resolvedTable) {
+  ++_sam3TableRead; clearTimeout(_sam3TableTimer);
+  _sam3TableLoading = false; _sam3TableError = "";
   values = values || {};
   document.getElementById("sam3-source-type").value = values.source_type || "folder"; sam3SourceChanged();
   document.getElementById("sam3-folder").value = values.folder || "";
@@ -517,7 +547,7 @@ function sam3ApplyFormData(values) {
   document.getElementById("sam3-device").value = values.device || "cuda";
   _tlcSyncAliasFromForm("sam3", "sam3-project-name", "sam3-folder");
   sam3Gate();
-  if (values.source_type === "table" && values.table_url && !_sam3Labels.length) return sam3ReadLabels();
+  if (values.source_type === "table" && values.table_url) return sam3ReadTable(false, resolvedTable);
 }
 
 function sam3InitPresets() {
@@ -531,6 +561,7 @@ function sam3InitPresets() {
     defaults: sam3DefaultFormData,
     inputs: ["source_type", "folder", "table_url"],
     contextInputs: sam3ContextInputs,
+    tableContext: {input: "table_url", project: "project_name", preserve: ["source_type"]},
     autoName: sam3AutoName,
     summary: sam3PresetSummary,
   });
@@ -623,6 +654,8 @@ function _sam3SourceKey() {
 }
 
 function sam3PreviewBlocker(sameImage) {
+  if (_sam3IsTable() && _sam3TableLoading) return "Wait while the table is read.";
+  if (_sam3IsTable() && _sam3TableError) return _sam3TableError;
   var enable = " to enable " + (sameImage ? "Recalculate Same." : "Preview Random Image.");
   if (!_sam3Labels.length) return "Add a label" + enable;
   if (_sam3IsTable() ? !_sam3Val("sam3-table-url") : !_sam3Val("sam3-folder")) {
@@ -637,6 +670,8 @@ function sam3PreviewBlocker(sameImage) {
 }
 
 function sam3CreateBlocker() {
+  if (_sam3IsTable() && _sam3TableLoading) return "Wait while the table is read.";
+  if (_sam3IsTable() && _sam3TableError) return _sam3TableError;
   var enable = " to enable Create Table & Run Prediction.";
   if (!_sam3Labels.length) return "Add a label" + enable;
   if (!_sam3Val("sam3-project-name")) return "Enter a 3LC project" + enable;

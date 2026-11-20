@@ -125,11 +125,13 @@ def get_route_handlers() -> list[BaseRouteHandler]:
             return {"error": "table_url is required"}
         try:
             import tlc
+            from tlc_plugin_sdk.shared.table_context import table_project_context
 
             from tlc_plugin_sam3 import _read_labels_from_table, _read_modality_from_table
 
             table = tlc.Table.from_url(table_url)
             return {
+                **table_project_context(table),
                 "labels": _read_labels_from_table(table),
                 "modality": _read_modality_from_table(table),
                 "table_length": len(table),
